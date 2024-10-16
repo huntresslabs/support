@@ -17,8 +17,8 @@
 # Written by Alan Bishop
 
 
-# This script attempts to set a machine to all the current Huntress / Microsoft Defender defaults. It also logs several Defender related environmental variables
-# and stores the log file within the Huntress working directory (program files\Huntress  or  program files (x86)\Huntress)
+# This script attempts to reset a machine's Defender settings to the Huntress / Microsoft Defender defaults. It also logs several Defender related environmental 
+# variables and stores the log file within the Huntress working directory (program files\Huntress  or  program files (x86)\Huntress)
 #
 # * Must be run as admin
 # * This will wipe out any existing Defender exclusions, use with caution!
