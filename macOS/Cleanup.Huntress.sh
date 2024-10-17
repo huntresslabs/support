@@ -2,7 +2,7 @@
 
 help() {
     cat<<EOF
-Usage: sudo sh ./Huntress.cleanup.sh
+Usage: sudo sh ./Cleanup.Huntress.sh
 
 This script will clean up an existing macOS agent installation without uninstalling it in the portal. The purpose 
 is to clean a system for installation of a new macOS agent as part of a manual upgrade. This may be necessary 
