@@ -5,7 +5,7 @@
 
 #test connectivity to Huntress.io on port 80 - output should be <title>Huntress Management Console</title>
 echo "-- Testing DNS resolution and port 80 connectivity" | tee -a huntress_network_test.log 
-curlOutput=$(sudo curl https://huntress.io -s | head | tail -n 1)
+curlOutput=$(sudo curl https://huntress.io -s | head -n 14 | tail -n 1)
 if [ "$curlOutput" == "<title>Huntress Management Console</title>" ]; then
      echo "[DNS Resolution / port 80 connection successful]" | tee -a huntress_network_test.log 
 else
