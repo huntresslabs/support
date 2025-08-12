@@ -2,6 +2,8 @@
 
 # Tests a number of ways Huntress agents communicate with the Huntress portal
 # Output is to standard out as well as the file huntress_network_test.log
+# 
+# <<< macOS version >>> 
 
 #test connectivity to Huntress.io on port 80 - output should be <title>Huntress Management Console</title>
 echo "-- Testing DNS resolution and port 80 connectivity" | tee -a huntress_network_test.log 
