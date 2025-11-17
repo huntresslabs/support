@@ -5,6 +5,7 @@
 # 
 # <<< macOS version >>>
 
+
 DebugLog="huntress_network_test.log"
 
 dd=$(date "+%Y-%m-%d  %H:%M:%S")
@@ -13,6 +14,8 @@ logger() {
     echo "$dd -- $*" >> $DebugLog;
 }
 
+logger "Huntress Network Tester, macOS Bash, last updated Nov 17, 2025"
+logger ""
 
 #test connectivity to Huntress.io on port 80 - output should be <title>Huntress Management Console</title>
 logger "-- Testing DNS resolution and port 80 connectivity"
