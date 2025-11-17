@@ -3,7 +3,7 @@
 #
 # Last Updated: Nov 12, 2025
 
-$DebugLog = "c:\Windows\temp\HuntressNetworkTest.txt"
+$DebugLog = "c:\Windows\temp\huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
 function LogMessage ($msg) {
