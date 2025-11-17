@@ -1,10 +1,9 @@
 #!/bin/bash
 
 # Tests a number of ways Huntress agents communicate with the Huntress portal
-# Output is to standard out as well as the file $DebugLog
+# Output is to standard out as well as the file represented by $DebugLog
 # 
 # <<< macOS version >>>
-
 
 DebugLog="huntress_network_test.log"
 
@@ -30,16 +29,21 @@ logger ""
 #tests that the Huntress certificate is not intercepted. If the Huntress cert is not returned the agent will not function.
 #output should indicate the cert is for Huntress (should be the first entry, begins with 0)
 logger "-- Testing Certificate Validation --"
-cert=$( openssl s_client -connect huntress.io:443 -servername huntress.io 2> /dev/null < /dev/null | head | grep "Huntress" )
-issuer=$( openssl s_client -connect huntress.io:443 -servername huntress.io 2> /dev/null < /dev/null | head | grep "1 s:/C=US" )
-if [[ "$cert" == " 0 s:/C=US/ST=Maryland/L=Ellicott City/O=Huntress Labs Inc./CN=*.huntress.io" && "$issuer" == " 1 s:/C=US/O=DigiCert Inc/CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1" ]]; then
+cert=" 0 s:/C=US/ST=Maryland/L=Ellicott City/O=Huntress Labs Inc./CN=*.huntress.io"
+certResponse=$( openssl s_client -connect huntress.io:443 -servername huntress.io 2> /dev/null < /dev/null | head | grep "Huntress" )
+issuer=" 1 s:/C=US/O=DigiCert Inc/CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1"
+issuerResponse=$( openssl s_client -connect huntress.io:443 -servername huntress.io 2> /dev/null < /dev/null | head | grep "1 s:/C=US" )
+if [[ "$cert" == "$certResponse" && "$issuer" == "$issuerResponse" ]]; then
      logger "[Certificate validation successful]"
 else
      logger "[FAILED: Certificate validation]"
-     logger "Certificate that was returned: $cert $issuer"
-
+     logger "Certificate that was returned: $certResponse"
+     logger "Certificate that was expected: $cert"
+     logger "Issuer that was returned: $issuerResponse"
+     logger "Issuer that was expected: $issuer"
 fi
 logger ""
+
 
 #test outgoing port 443 connectivity to Huntress
 #output should indicate every URL connection succeeded
