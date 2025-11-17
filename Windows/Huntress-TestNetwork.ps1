@@ -12,6 +12,7 @@ function LogMessage ($msg) {
     Write-Output "$TimeStamp $msg"
 }
 
+LogMessage "Huntress Network Tester, Windows PowerShell, last updated Nov 17, 2025 `n"
 
 # Testing for blocked port 443
 # Avoid "First Run Customize" blocking the testing by disabling it
@@ -24,6 +25,7 @@ $URLs = @(("https://eetee.huntress.io/{0}"-f $file_name),
 ("https://huntress-survey-results.s3.amazonaws.com/agent/connectivity/{0}" -f $file_name),
 ("https://huntress-updates.s3.amazonaws.com/agent/connectivity/{0}" -f $file_name),
 ("https://huntress-uploads.s3.us-west-2.amazonaws.com/agent/connectivity/{0}" -f $file_name),
+("https://huntress-log-uploads.s3.amazonaws.com/agent/connectivity/{0}" -f $file_name),
 ("https://huntress-user-uploads.s3.amazonaws.com/agent/connectivity/{0}" -f $file_name),
 ("https://huntress.io/agent/connectivity/{0}" -f $file_name),
 ("https://huntresscdn.com/agent/connectivity/{0}" -f $file_name),
