@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Huntress Labs, Inc.
+# Copyright (c) 2025 Huntress Labs, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -15,15 +15,22 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Written by Alan Bishop
-
-
+#
 # This script attempts to reset a machine's Defender settings to the Huntress / Microsoft Defender defaults. It also logs several Defender related environmental 
-# variables and stores the log file within the Huntress working directory (program files\Huntress  or  program files (x86)\Huntress)
+# variables, Defender service status, and gpresult. All stored in a couple log files in \Windows\temp
 #
 # * Must be run as admin
 # * This will wipe out any existing Defender exclusions, use with caution!
+# * Skip to line 106 to see line by line which commands match Huntress policies
+#
+# Usage: 
+#       powershell -executionpolicy bypass -f .\Huntress.reset.Defender.ps1
 
 
+# Using \Windows\temp\ to store logs as the Huntress folder won't be accessible with TP turned on
+$DebugLog  = 'C:\Windows\temp\HuntressMAV.log'
+$PolicyLog = 'C:\Windows\temp\PolicyResult.html'
+Write-Host "Storing $DebugLog and $PolicyLog"
 
 # adds time stamp to a message and then writes that to the log file
 function LogMessage ($msg) {
@@ -32,37 +39,22 @@ function LogMessage ($msg) {
     Write-Host "$($timeStamp) $msg"
 }
 
-# Find poorly written code faster with the most stringent setting.
-Set-StrictMode -Version Latest
-
-# determine where Huntress is installed and place the log files inside the same directory
-if (Test-Path 'C:\Program Files\Huntress\') {
-    $DebugLog  = 'C:\Program Files\Huntress\HuntressMAV.log'
-    $PolicyLog = 'C:\Program Files\Huntress\PolicyResult.html'
-} elseif (Test-Path 'C:\Program Files (x86)\Huntress\') {
-    $DebugLog  = 'C:\Program Files (x86)\Huntress\HuntressMAV.log' 
-    $PolicyLog = 'C:\Program Files (x86)\Huntress\PolicyResult.html'
-} else {
-    Write-Host "Huntress install path not found! Attempting to use log file c:\Windows\temp\ for HuntressMAV.log and PolicyResult.html"
-    $DebugLog  = 'C:\Windows\temp\HuntressMAV.log'
-    $PolicyLog = 'C:\Windows\temp\PolicyResult.html'
-}
-
 # Used by the Huntress support team when troubleshooting.
-LogMessage "MAV repair script: 2022 Oct 12"
+LogMessage "MAV repair script: 2025 Nov 19"
 LogMessage "Beginning status and preferences:"
 $MPCS = Out-String -inputobject $(Get-MPComputerStatus)
 $MPP  = Out-String -inputobject $(Get-MPPreference)
 LogMessage $MPCS
 LogMessage $MPP
-cls
 
+# Find script issues faster with the most stringent setting.
+Set-StrictMode -Version Latest
 
-# Check for Tamper Protection, if it's on then this script may have difficulty reseting MAV to defaults. Tamper Protection can ONLY be changed in the GUI!
+# Check for Tamper Protection, if it's on then this script may have difficulty reseting MAV to defaults. Tamper Protection can ONLY be changed in the GUI or your Microsoft portal!
 # TP only exists with Windows Security Center, which is only on workstations. i.e. servers don't have TP. 1 = workstation, 2 = DC, 3 = server
 if ((Get-CimInstance -ClassName win32_operatingsystem).producttype -eq 1)
 {
-    if ((Get-ItemPropertyValue -Path "HKLM:\Software\Microsoft\Windows Defender\Features" -Name "TamperProtection") -eq 5) {
+    if ((Get-ItemPropertyValue -Path "HKLM:\Software\Microsoft\Windows Defender\Features" -Name "TamperProtection") -ne 0) {
         LogMessage "Tamper Protection is ON, you'll need to turn it off within the GUI for this script to work correctly! TP can be turned back on after running this script successfully." 
         LogMessage "Last change to Tamper Protection was done by:"
         switch (Get-ItemPropertyValue -Path "HKLM:\Software\Microsoft\Windows Defender\Features" -Name "TamperProtectionSource")
@@ -99,7 +91,7 @@ cls
 # make sure the 8 base engines are on - best effort
 # Antimalware / Antispyware / Antivirus -> cannot be manually turned on or off, instead just make sure the service is running
 Start-Service windefend
-# Network Inspection -> same as above, cannot be turned on/off
+# Network Inspection -> same as above, cannot be turned on/off, but sometimes restarting the service helps
 Start-Service wdnissvc    
 # Real-time Protection
 Set-MpPreference -DisableRealtimeMonitoring $false
@@ -110,59 +102,124 @@ Set-MpPreference -DisableIOAVProtection $false
 Set-MpPreference -DisableBehaviorMonitoring $false
 
 
-# set exclusions to default
-$pathExclusions = Get-MpPreference | select ExclusionPath 
+##################################################################################################################################
+#                                    Begin Huntress policy matching                                                              #
+##################################################################################################################################
+# In this section match the commented-titles below with the policy tabs in the Huntress portal. See the General commented title below for more details.
+
+############ General ############                         # match this title with your AV policy under the "General" tab in Huntress MAV policy
+# Hide Defender UI                                        # this is the setting as it's described in the Huntress portal
+Set-MpPreference -UILockdown $false                       # this is the command to set the policy to the recommended Huntress default of "Visible" for the Defender UI
+
+# Suppress All Notifications (0=do not suppress notifications, 1=suppress notifications)
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\UX Configuration' /v 'Notification_Suppress' /t 'REG_DWORD' /d '0' /f
+
+############ Protection ############
+# Enabled/Disabled Status (0=disabled, 1=enabled, 2=advanced reporting)
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Spynet' /v 'SpyNetReporting' /t 'REG_DWORD' /d '1' /f
+
+# Automatic Sample Submission (0=always prompt, 1=send safe samples automatically, 2=never send, 3=send all samples automatically)
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Spynet' /v 'SubmitSamplesConsent' /t 'REG_DWORD' /d '1' /f
+
+############ Exclusions ############
+# Path exclusions
+$pathExclusions = (Get-MpPreference).ExclusionPath 
 foreach ($exclusion in $pathExclusions) {
-    if ($exclusion.ExclusionPath -ne $null) {
-        Remove-MpPreference -ExclusionPath $exclusion.ExclusionPath
+    if ($exclusion -ne "%PROGRAMFILES%\Huntress\Rio\Rio.exe") {
+        Remove-MpPreference -ExclusionPath $exclusion
     }
 }
-$extensionExclusion = Get-MpPreference | select ExclusionExtension 
+
+# Extension exclusions
+$extensionExclusion = (Get-MpPreference).ExclusionExtension 
 foreach ($exclusion in $extensionExclusion) {
-    if ($exclusion.ExclusionExtension -ne $null) {
-        Remove-MpPreference -ExclusionExtension $exclusion.ExclusionExtension
+    if ($null -ne $exclusion) {
+        Remove-MpPreference -ExclusionExtension $exclusion
     }
 }
-$processExclusions = Get-MpPreference | select ExclusionProcess
+
+# Process exclusions
+$processExclusions = (Get-MpPreference).ExclusionProcess
 foreach ($exclusion in $processExclusions) {
-    if ($exclusion.ExclusionProcess -ne $null) {
-        Remove-MpPreference -ExclusionProcess $exclusion.ExclusionProcess
+    if ($exclusion -ne "%PROGRAMFILES%\Huntress\HuntressAgent.exe" -and $exclusion -ne "%PROGRAMFILES%\Huntress\Rio\Rio.exe") {
+        Remove-MpPreference -ExclusionProcess $exclusion
     }
 }
 
+############ Reputation ############
+# SmartScreen 
+# ShellSmartScreenLevel is required for EnableSmartScreen to function, however SmartScreen is recommended to keep off so the below statement is commented out
+# reg add 'HKLM\Software\Policies\Microsoft\Windows\System' /v 'ShellSmartScreenLevel' /t 'REG_SZ' /d 'Enabled' /f
+# Policy Setting for Apps and Files (1=enabled, 0=disabled)
+reg add 'HKLM\Software\Policies\Microsoft\Windows\System' /v 'EnableSmartScreen' /t 'REG_DWORD' /d '0' /f
+# ConfigureAppInstallControlEnabled is required for ConfigureAppInstallControl to function.
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\SmartScreen' /v 'ConfigureAppInstallControlEnabled' /t 'REG_DWORD' /d '0' /f
+# Policy Setting for Microsoft Store ()
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\SmartScreen' /v 'ConfigureAppInstallControl' /t 'REG_SZ' /d 'Anywhere' /f
 
-# set scans to default times and cadence
-Set-MpPreference -ScanScheduleTime "02:00:00"
+# PUA Blocking (0=disabled, 1=enabled, 2=audit)
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender' /v 'PUAProtection' /t 'REG_DWORD' /d '2' /f
+
+############ Scans ############
+# Scan Time
 Set-MpPreference -ScanScheduleQuickScanTime "02:00:00"
+
+# Catch-up Scans
 Set-MpPreference -DisableCatchupFullScan $true
 Set-MpPreference -DisableCatchupQuickScan $false
 
-# scan removable drives, archives / packed executables, but not network files
-Set-MpPreference -DisableArchiveScanning $false
+# Removable Drive Scanning
 Set-MpPreference -DisableRemovableDriveScanning $false
+
+# Archive File Scanning
+Set-MpPreference -DisableArchiveScanning $false
+
+# Packed Executable Scanning (1=packed exe are scanned, 0=packed exe are not scanned)
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender' /v 'DisablePackedExeScanning' /t 'REG_DWORD' /d '1' /f
+
+# Network File Scanning
 Set-MpPreference -DisableScanningNetworkFiles $true
 
-# set signatures updates to default times and cadence
+############ Signatures ############
+# Signature Update Interval
 Set-MpPreference -SignatureUpdateInterval 6
+
+# Signature Update Catch-up Interval
 Set-MpPreference -SignatureUpdateCatchupInterval 1
+
+# Update Signatures on Startup
+# making sure these settings aren't a blocker
 Set-MpPreference -SignatureDisableUpdateOnStartupWithoutEngine $false
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Signature Updates' /v 'ForceUpdateFromMU' /t 'REG_DWORD' /d '0' /f
+# 1=enabled, 0=disabled
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Signature Updates' /v 'UpdateOnStartup' /t 'REG_DWORD' /d '1' /f
+
+# Update Signatures from Microsoft Update
 Set-MpPreference -SignatureFallbackOrder "MicrosoftUpdateServer|MMPC"
 
-# set advanced options to default, no purge
+############ Advanced ############
+# Purge Quarantine After Delay
 Set-MpPreference -QuarantinePurgeItemsAfterDelay 0
-Set-MpPreference -UILockdown $false
+
+# NIS Definition Retirement
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\NIS\Consumers\IPS' /v 'DisableSignatureRetirement' /t 'REG_DWORD' /d '0' /f
+
+# NIS Protocol Recognition
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\NIS' /v 'DisableProtocolRecognition' /t 'REG_DWORD' /d '0' /f
+
+
 
 # Log the final state of the machine - Defender status, Defender services, and gpresult
 LogMessage "Script successfully finished running, results:"
-$MPCStatus     = Out-String -inputobject (Get-MPComputerStatus)
-$MPPreference  = Out-String -inputobject (Get-MPPreference)
-$Services      = Out-String -inputobject (Get-Service | Where{$_.displayname -like "*defender*"} | Select Name, Status, StartType)
+$MPCS     = Out-String -inputobject $(Get-MPComputerStatus)
+$MPP      = Out-String -inputobject $(Get-MPPreference)
+$Services = Out-String -inputobject (Get-Service | Where{$_.displayname -like "*defender*"} | Select Name, Status, StartType)
 LogMessage $MPCS
 LogMessage $MPP
 LogMessage $Services
-LogMessage " "
-gpresult /h $PolicyLog
-cls
+
+# Save the current applied policy in a separate file
+gpresult /h $PolicyLog /f
 
 Write-Host "Log saved to $($DebugLog)"
 Write-Host "RSoP - results of current policy set saved to $($PolicyLog)"
