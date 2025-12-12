@@ -189,7 +189,7 @@ Set-MpPreference -SignatureUpdateCatchupInterval 1
 # Update Signatures on Startup
 # making sure these settings aren't a blocker
 Set-MpPreference -SignatureDisableUpdateOnStartupWithoutEngine $false
-reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Signature Updates' /v 'ForceUpdateFromMU' /t 'REG_DWORD' /d '0' /f
+reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Signature Updates' /v 'ForceUpdateFromMU' /t 'REG_DWORD' /d '1' /f
 # 1=enabled, 0=disabled
 reg add 'HKLM\Software\Policies\Microsoft\Windows Defender\Signature Updates' /v 'UpdateOnStartup' /t 'REG_DWORD' /d '1' /f
 
