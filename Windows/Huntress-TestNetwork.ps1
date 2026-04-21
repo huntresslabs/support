@@ -1,7 +1,7 @@
 # This script tests that HTTPS connectivity can be established to the Huntress cloud and that communication is not intercepted (certificate mismatch)
 # Output will be printed to console as well as saved in \Windows\temp\HuntressNetworkTest.txt
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: Mar 31, 2026"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: April 21, 2026"
 
 
 $DebugLog = "c:\Windows\temp\huntress_network_test.log"
@@ -11,15 +11,17 @@ function LogMessage ($msg) {
 	Add-Content $DebugLog "$TimeStamp $msg"
     Write-Output "$TimeStamp $msg"
 }
-LogMessage $latestUpdate+"`n"
+LogMessage "-----------------------------------------------------------------------------"
+LogMessage $latestUpdate
+LogMessage "-----------------------------------------------------------------------------"
 
-# Testing for blocked port 443
 # Avoid "First Run Customize" blocking the testing by disabling it
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main" -Name "DisableFirstRunCustomize" -Value 2
-
 # Force TLS 1.2 to avoid compatibility issues and ensure accurate testing (Huntress uses TLS 1.2+ only)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+
+# Testing for blocked port 443
 $file_name  = "96bca0cef10f45a8f7cf68c4485f23a4.txt"
 $file_name2 = "96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D"
 $file_name3 = "96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:08:31Z&se=3026-03-06T09:23:31Z&spr=https&sv=2024-11-04&sr=b&sig=TgKJlXd7Q0ggdX5DN7DHfpXHUMLVZdujzZS5%2FcCWgIs%3D"
@@ -69,48 +71,36 @@ foreach ($URL in $URLs) {
         LogMessage "Connection succeeded to $shortURL"
     }
 }
-Write-Output "-----------------------------------------------------------------------------"
+LogMessage "-----------------------------------------------------------------------------"
+
 
 LogMessage "Testing for certificate interception/inspection/deep packet inspection"
-$URLs = @("https://www.huntress.io", 
-		  "https://huntresscdn.com", 
-		  "https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D", 
-		  "https://huntresssharedue2.blob.core.windows.net/huntress-uploads/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:04:57Z&se=3026-03-06T09:19:57Z&spr=https&sv=2024-11-04&sr=b&sig=TczBN0PJ8F375iD3xzgB0j%2BZLgJ6Q8LsS2IR0kuGPFQ%3D")
-foreach ($URL in $URLs) {
-	if ($URL -eq "https://www.huntress.io") {
-		$subject = "CN=*.huntress.io, O=Huntress Labs Inc., L=Ellicott City, S=Maryland, C=US"
-		$issuer = "CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US"
-		$Connection = [System.Net.HttpWebRequest]::Create("$URL/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt")
-	} elseif ($URL -eq "https://huntresscdn.com") {
-		$subject = "CN=huntresscdn.com"
-		$issuer  = "CN=WE1, O=Google Trust Services, C=US"
-		$Connection = [System.Net.HttpWebRequest]::Create("$URL/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt")
-	} else {
-		$subject = "CN=*.blob.core.windows.net, O=Microsoft Corporation, L=Redmond, S=WA, C=US"
-		$issuer  = "CN=Microsoft Azure RSA TLS Issuing CA 07, O=Microsoft Corporation, C=US"
-		$Connection = [System.Net.HttpWebRequest]::Create($URL)
-	}
+$URLs = @("https://www.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
+		  "https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
+		  "https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D")
+$hash = @("95F9708BE32E778CE4ED11CF9A7DBC50041663A4",
+		  "D80720CE9322EFECB54144CA775BADAC5A530C61",
+		  "C0D452A62049904D88261B11AD1185FF706E072D")
+
+for ($i = 0; $i -lt $URLs.Count; $i++) {
+	$url = [System.Uri]$($URLs[$i])
+	$shortURL = (($URLs[$i].Split('/'))[0..2] -join '/')
+	$Connection = [System.Net.HttpWebRequest]::Create($url)
 	$Response = $Connection.GetResponse()
-	$cert = $Connection.ServicePoint.Certificate
+	$certResponse = $Connection.ServicePoint.Certificate
+	$hashResponse = $certResponse.GetCertHashString()
 	$Response.Dispose()
 
-	$shortURL = (($url.Split('/'))[0..2] -join '/')
-	LogMessage "Checking cert for $shortURL"
-	LogMessage "Subject value:  $($cert.Subject)"
-	if ( $cert.Subject -eq $subject) {
-		LogMessage "Certificate is correct!"
+	if ( $hash[$i] -eq $hashResponse ) {
+		LogMessage "Certificate match for $shortURL!"
 	} else {
-		LogMessage "Expected value: $subject"
-		LogMessage "Certificate does not match expected value. Possible DPI, certificate interception, or pinning of Huntress certificates."
+		LogMessage "WARNING: Certificate doesn't match! Possible DPI, cert interception or pinning of certificates. The certificate from this URL must match otherwise the Huntress agent will not function!"
+		LogMessage "This is likely the certificate interceptor: $($certResponse.Subject) $($certResponse.Issuer)"
+		LogMessage "Expected: $($hash[$i])"
+		LogMessage "Received: $hashResponse"
 	}
-
-	LogMessage "Issuer: $($cert.Issuer)"
-	if ( $cert.Issuer -eq $issuer) {
-		LogMessage "Certificate is correct!"
-	} else {
-		LogMessage "Expected value: $issuer"
-		LogMessage "Certificate does not match expected value. Possible DPI, certificate interception, or pinning of Huntress certificates. Issuer name is the likely source of certificate interception"
-	}
-	Write-Output ""
 }
+LogMessage ""
+
+
 LogMessage "---------------------- Network testing complete --------------------------------"
