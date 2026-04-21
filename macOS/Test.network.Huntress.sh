@@ -3,7 +3,7 @@
 # Tests a number of ways Huntress agents communicate with the Huntress portal
 # Output is to standard out as well as the file represented by $DebugLog
 # 
-# <<< macOS version >>>
+# <<< Bash version >>>
 
 DebugLog="huntress_network_test.log"
 
@@ -13,7 +13,7 @@ logger() {
     echo "$dd -- $*" >> $DebugLog;
 }
 
-logger "Huntress Network Tester, macOS Bash, last updated April 21, 2026"
+logger "Huntress Network Tester, macOS and Linux Bash, last updated April 21, 2026"
 logger ""
 countFails=0
 
