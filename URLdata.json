@@ -1,7 +1,5 @@
-Content-Type: application/json; charset=utf-8
-
 {
-"array1": [
+	"array1": [
 			"https://update.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt","https://huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 			"https://eetee.huntress.io/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 			"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
@@ -17,11 +15,11 @@ Content-Type: application/json; charset=utf-8
 			"https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D]",
 			"https://huntresssiemue2.blob.core.windows.net/huntress-log-uploads/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:08:31Z&se=3026-03-06T09:23:31Z&spr=https&sv=2024-11-04&sr=b&sig=TgKJlXd7Q0ggdX5DN7DHfpXHUMLVZdujzZS5%2FcCWgIs%3D",
 			"https://huntresssharedue2.blob.core.windows.net/huntress-uploads/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:04:57Z&se=3026-03-06T09:19:57Z&spr=https&sv=2024-11-04&sr=b&sig=TczBN0PJ8F375iD3xzgB0j%2BZLgJ6Q8LsS2IR0kuGPFQ%3D"],
-"array2": [
+	"array2": [
 			"https://www.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt", 
 		  	"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt", 
 		  	"https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D" ],
-"array3": [
+	"array3": [
 			"95F9708BE32E778CE4ED11CF9A7DBC50041663A4", 
 		 	"D80720CE9322EFECB54144CA775BADAC5A530C61",
 		 	"C0D452A62049904D88261B11AD1185FF706E072D" ]
