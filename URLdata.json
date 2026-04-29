@@ -25,7 +25,7 @@
 			"CN=huntresscdn.com",
 			"C=US/O=Google Trust Services/CN=WE1",
 			"C=US/ST=WA/L=Redmond/O=Microsoft Corporation/CN=*.blob.core.windows.net",
-			"C=US/O=Microsoft Corporation/CN=Microsoft Azure RSA TLS Issuing CA 04]" ],
+			"C=US/O=Microsoft Corporation/CN=Microsoft Azure RSA TLS Issuing CA 04" ],
 	"array4": [
 			"CN=*.huntress.io, O=Huntress Labs Inc., L=Ellicott City, S=Maryland, C=US",
 			"CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US",
