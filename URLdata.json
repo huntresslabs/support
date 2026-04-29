@@ -18,19 +18,19 @@
 	"array2": [
 			"https://www.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 		  	"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
-		  	"https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D" ],
+		  	"https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D"],
 	"array3": [
 			"C=US/ST=Maryland/L=Ellicott City/O=Huntress Labs Inc./CN=*.huntress.io",
 			"C=US/O=DigiCert Inc/CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1",
 			"CN=huntresscdn.com",
 			"C=US/O=Google Trust Services/CN=WE1",
 			"C=US/ST=WA/L=Redmond/O=Microsoft Corporation/CN=*.blob.core.windows.net",
-			"C=US/O=Microsoft Corporation/CN=Microsoft Azure RSA TLS Issuing CA 04" ],
+			"C=US/O=Microsoft Corporation/CN=Microsoft Azure RSA TLS Issuing CA 04"],
 	"array4": [
 			"CN=*.huntress.io, O=Huntress Labs Inc., L=Ellicott City, S=Maryland, C=US",
 			"CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US",
 			"CN=huntresscdn.com",
 			"CN=WR1, O=Google Trust Services, C=US",
 			"CN=*.blob.core.windows.net, O=Microsoft Corporation, L=Redmond, S=WA, C=US",
-			"CN=Microsoft Azure RSA TLS Issuing CA 04, O=Microsoft Corporation, C=US" ]
+			"CN=Microsoft Azure RSA TLS Issuing CA 04, O=Microsoft Corporation, C=US"]
 }
