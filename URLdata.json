@@ -16,11 +16,21 @@
 			"https://huntresssiemue2.blob.core.windows.net/huntress-log-uploads/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:08:31Z&se=3026-03-06T09:23:31Z&spr=https&sv=2024-11-04&sr=b&sig=TgKJlXd7Q0ggdX5DN7DHfpXHUMLVZdujzZS5%2FcCWgIs%3D",
 			"https://huntresssharedue2.blob.core.windows.net/huntress-uploads/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:04:57Z&se=3026-03-06T09:19:57Z&spr=https&sv=2024-11-04&sr=b&sig=TczBN0PJ8F375iD3xzgB0j%2BZLgJ6Q8LsS2IR0kuGPFQ%3D"],
 	"array2": [
-			"https://www.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt", 
-		  	"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt", 
+			"https://www.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
+		  	"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 		  	"https://huntressedrue2.blob.core.windows.net/huntress-installers/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt?sp=r&st=2026-03-06T01:03:27Z&se=3026-03-06T09:18:27Z&spr=https&sv=2024-11-04&sr=b&sig=9gZx9aselhUP0SjeYvYSXD14S5QMpxkD1F0LMv0UBS0%3D" ],
 	"array3": [
-			"87:5B:E4:BB:1B:08:7F:57:3E:EB:4D:F0:C6:CB:81:1F:07:78:B0:E0:EF:9E:2F:31:84:EA:9F:2A:25:88:47:5C", 
-		 	"75:A9:87:63:3E:2C:C0:B8:98:4B:0B:02:45:AB:2C:E9:53:8F:CE:F6:63:D9:9A:93:21:DC:53:22:8A:EE:69:DE",
-		 	"E8:56:CB:80:E1:A3:18:70:01:7C:B0:0B:58:65:1A:FB:70:6B:B9:30:7C:38:5B:FE:66:CA:9F:5E:06:E5:33:CE" ]
+			"C=US/ST=Maryland/L=Ellicott City/O=Huntress Labs Inc./CN=*.huntress.io",
+			"C=US/O=DigiCert Inc/CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1",
+			"CN=huntresscdn.com",
+			"C=US/O=Google Trust Services/CN=WE1",
+			"C=US/ST=WA/L=Redmond/O=Microsoft Corporation/CN=*.blob.core.windows.net",
+			"C=US/O=Microsoft Corporation/CN=Microsoft Azure RSA TLS Issuing CA 04]" ],
+	"array4": [
+			"CN=*.huntress.io, O=Huntress Labs Inc., L=Ellicott City, S=Maryland, C=US",
+			"CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US",
+			"CN=huntresscdn.com",
+			"CN=WR1, O=Google Trust Services, C=US",
+			"CN=*.blob.core.windows.net, O=Microsoft Corporation, L=Redmond, S=WA, C=US",
+			"CN=Microsoft Azure RSA TLS Issuing CA 04, O=Microsoft Corporation, C=US" ]
 }
