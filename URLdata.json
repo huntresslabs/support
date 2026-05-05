@@ -1,6 +1,7 @@
 {
 	"array1": [
-			"https://update.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt","https://huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
+			"https://update.huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
+		    "https://huntress.io/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 			"https://eetee.huntress.io/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 			"https://huntresscdn.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
 			"https://huntress-installers.s3.amazonaws.com/agent/connectivity/96bca0cef10f45a8f7cf68c4485f23a4.txt",
