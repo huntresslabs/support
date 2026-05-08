@@ -33,5 +33,9 @@
 			"CN=huntresscdn.com",
 			"CN=WR1, O=Google Trust Services, C=US",
 			"CN=*.blob.core.windows.net, O=Microsoft Corporation, L=Redmond, S=WA, C=US",
-			"CN=Microsoft Azure RSA TLS Issuing CA 04, O=Microsoft Corporation, C=US"]
+			"CN=Microsoft Azure RSA TLS Issuing CA 04, O=Microsoft Corporation, C=US"],
+	"array5": [
+			"DigiCert",
+			"Google Trust Services",
+			"Microsoft Corporation"]
 }
