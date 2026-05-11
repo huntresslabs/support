@@ -5,7 +5,7 @@
 # 
 # <<< Bash version >>>
 
-latestUpdate="Huntress Network Tester, macOS and Linux Bash, last updated May 4, 2026"
+latestUpdate="Huntress Network Tester, macOS and Linux Bash, last updated May 11, 2026"
 
 
 # adds time stamp to a message and then writes that to the log file
@@ -22,7 +22,29 @@ logger "------------------------------------------------------------------------
 # for the summary, keeps track of failures for a conclusive singular pass/fail at the end
 countFails=0
 
-# retrieve a list of URLs to test from Huntress github
+# Exit the script with error if a required dependency is missing
+tools=("curl" "jq" "openssl" "nc")
+for tool in "${tools[@]}"; do
+     if [ -z "$tool" ]; then 
+          logger "Error retrieving install status of curl, jq, openssl, or nc! $tool"
+     else 
+          if ! command -v $tool &> /dev/null; then
+               logger "Error: $tool is not installed and is required to run this script! You may need to"
+               logger "install this using your package manager. Here are some suggestions:"
+               logger "macOS:               brew install $tool"
+               logger "Debian/Ubuntu:       sudo apt install $tool"
+               logger "CentOS/Fedora/RHEL:  sudo dnf install $tool"
+               if [ "$tool" == "jq" ]; then
+                    logger "** Please note the jq tool in CentOS/RHEL may require EPEL first! **"
+               fi
+               logger "SUSE:                sudo zypper install $tool"
+               logger "If the above commands don't work for your distro, please refer to your distro's support team or their documentation."
+               exit 1
+          fi
+     fi
+done     
+
+# retrieve URLs, cert Issuer, and cert Subject from Huntress github
 URL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
 json="$(curl -fsSL --tlsv1.2 "$URL")"
 testURLs=()
@@ -37,7 +59,7 @@ while IFS= read -r item; do
      [ -z "$item" ] && continue
      certURLs+=("$item")
 done < <(echo "$json" | jq -r '.array2[] | select(length > 0)')
-# even array indices are Subjects, odd are Issuer
+# even array indices are Subjects, odd are Issuer. 
 count=0    
 while IFS= read -r item; do
      [ -z "$item" ] && continue
@@ -48,6 +70,10 @@ while IFS= read -r item; do
      fi
      ((count++))
 done < <(echo "$json" | jq -r '.array3[] | select(length > 0)')
+while IFS= read -r item; do
+     [ -z "$item" ] && continue
+     expIssuerName+=("$item")
+done < <(echo "$json" | jq -r '.array5[] | select(length > 0)')
 
 
 # Simple test just to establish working DNS and basic internet connectivity
@@ -68,8 +94,9 @@ logger "-- Testing Certificate Validation --"
 certFailCounter=0
 numEntries=${#certURLs[@]}
 for (( i=0; i<numEntries; i++ )); do
-     cleanURL=$(echo "${certURLs[i]}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-     s_client==$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
+     cleanURL=$(printf "%s\n" "${certURLs[i]}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+     s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
+     PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
      recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
      recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
@@ -81,18 +108,26 @@ for (( i=0; i<numEntries; i++ )); do
           logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
           logger "Subject that was returned: [$recSubject]"
           logger "Subject that was expected: [${expSubject[i]}]"
+          logger "PEM that was received: $PEM"
      fi
 
-     if [[ "$recIssuer" == "${expIssuer[i]}" ]]; then
+     # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
+     if [[ "$recIssuer" == "${expIssuer[i]}" ]]; then 
           logger "[Certificate issuer validation successful for $cleanURL]"
      else
-          ((certFailCounter++))
-          ((countFails++))
-          logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-          logger "Subject that was returned: [$recIssuer]"
-          logger "Subject that was expected: [${expIssuer[i]}]"
+          if [[ "$recIssuer" == *"${expIssuer[i]}"* ]]; then
+               logger "Please note this was not an exact match, which is expected with big infrastructure."
+               logger "Subject that was returned: [$recIssuer]"
+               logger "Subject that was expected: [${expIssuer[i]}]"
+          else
+               ((certFailCounter++))
+               ((countFails++))
+               logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
+               logger "Subject that was returned: [$recIssuer]"
+               logger "Subject that was expected: [${expIssuer[i]}]"
+               logger "PEM that was received: $PEM"
+          fi
      fi
-
 done
 if [[ "$certFailCounter" > 0 ]]; then
      logger ""
@@ -111,12 +146,11 @@ logger ""
 # test outgoing port 443 connectivity to Huntress URLs
 logger "-- Verifying Huntress services can be reached --"
 for i in "${!testURLs[@]}"; do
-     cleanURL=$(echo "${testURLs[i]}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-     nc=$(nc -zvw 5 "$cleanURL" 443 2>&1 | grep "succeeded")
-     if [ -n "$nc" ]; then
-          logger "[Connection to $cleanURL successful]"
+     cleanURL=$(printf "%s/n" "${testURLs[i]}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+     if nc -zvw 5 "$cleanURL" 443 > /dev/null 2>&1; then
+         logger "[Connection to $cleanURL successful]"
      else
-          logger "[FAILED: Connection to $cleanURL"
+         logger "[FAILED: Connection to $cleanURL"
           ((countFails++))
      fi
 done
