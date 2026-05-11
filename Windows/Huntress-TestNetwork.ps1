@@ -3,7 +3,7 @@
 # 
 # <<< PowerShell version >>>
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: May 4, 2026"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: May 11, 2026"
 
 
 # adds time stamp to a message and then writes that to the log file
@@ -25,13 +25,12 @@ Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main" -Name "
 # Force TLS 1.2 to avoid compatibility issues and ensure accurate testing (Huntress uses TLS 1.2+ only)
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-}
-catch {
-    Write-Error "Huntress requires TLS 1.2 or higher for security reasons."
+} catch {
+    logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
     exit 1
 }
 
-# retrieve a list of URLs to test from Huntress github
+# retrieve URLs, cert Issuer, and cert Subject from Huntress github
 $URL = 'https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
 try {
     $data = Invoke-RestMethod -Uri $URL -UseBasicParsing -ErrorAction Stop
@@ -42,14 +41,14 @@ try {
     $jsonString = $wc.DownloadString($URL)
     $data = $jsonString | ConvertFrom-Json
 }
-
 # process the data from github
 $data = (Invoke-WebRequest -Uri $URL -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
-$testURLs   = @($data.array1)
-$certURLs   = @($data.array2)
-$certTemp   = @($data.array4)
-$expSubject = @()
-$expIssuer  = @()
+$testURLs      = @($data.array1)
+$certURLs      = @($data.array2)
+$certTemp      = @($data.array4)
+$expIssuerName = @($data.array5)
+$expSubject    = @()
+$expIssuer     = @()
 # array4 contains two different sets of info, even indices are subject, odd indices are issuer
 for ($i = 0; $i -lt $certTemp.Count; $i++) {
     if ($i % 2 -eq 0) {
@@ -62,24 +61,30 @@ for ($i = 0; $i -lt $certTemp.Count; $i++) {
 
 # Simple test just to establish working DNS and basic internet connectivity
 logger "-- Testing DNS resolution and port 80 connectivity --"
-$curlOutput = $(curl "https://huntress.io" -UseBasicParsing)
-if ($curlOutput.StatusCode -eq 200) {
-    $curlOutput = $($curlOutput.Content) | Select-Object -First 14 | Select-Object -Last 1
-    $startIndex = $curlOutput.IndexOf("<title>")
-    if ($startIndex -ne -1) {
-        $contentStart = $startIndex + 7
-        $result = $curlOutput.Substring($contentStart, 27)
-        logger "[DNS Resolution / port 80 connection successful]"
+try {
+    $pageOutput = $(Invoke-WebRequest "https://huntress.io" -UseBasicParsing)
+    if ($pageOutput.StatusCode -eq 200) {
+        $pageOutput = $($pageOutput.Content) | Select-Object -First 14 | Select-Object -Last 1
+        $startIndex = $pageOutput.IndexOf("<title>")
+        if ($startIndex -ne -1) {
+            $contentStart = $startIndex + 7
+            $result = $pageOutput.Substring($contentStart, 27)
+            logger "[DNS Resolution / port 80 connection successful]"
+        } else {
+            logger "The tag '<title>' was not found."
+            $countFails++
+        }
     } else {
-        Write-Host "The tag '<title>' was not found."
+        logger "[FAILED: DNS and port 80 checks]"
+        logger "Output: $pageOutput"
         $countFails++
     }
-} else {
-    logger "[FAILED: DNS and port 80 checks]"
-    echo "Output: $curlOutput"
+} catch {
+    logger "Error interacting with Invoke-WebRequest: $_"
     $countFails++
 }
 logger ""
+
 
 
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
@@ -95,6 +100,12 @@ for ($i = 0; $i -lt $certURLs.Count; $i++) {
     $cert       = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
     $recSubject = $cert.Subject
     $recIssuer  = $cert.Issuer
+    # retrieve a hashed/encrypted version of the certificate to log in case troubleshooting is required
+    $PEM = @"
+-----BEGIN CERTIFICATE-----
+$([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks))
+-----END CERTIFICATE-----
+"@
 
     if ($recSubject -eq $expSubject[$i]) {
         logger "[Certificate subject validation successful for $cleanURL]"
@@ -106,14 +117,22 @@ for ($i = 0; $i -lt $certURLs.Count; $i++) {
         $countFails++
     }
 
-     if ($recIssuer -eq $expIssuer[$i]) {
+    # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
+    if ($recIssuer -eq $expIssuer[$i]) {
         logger "[Certificate issuer validation successful for $cleanURL]"
-     } else {
-        logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-        logger "Subject that was returned: [$recIssuer]"
-        logger "Subject that was expected: [$($expIssuer[$i])]"
-        $failCounter++
-        $countFails++
+    } else {
+        if ($recIssuer -like "*$($expIssuer[$i]))*") {
+            logger "Please note this was not an exact match, which is expected with big infrastructure."
+            logger "Subject that was returned: [$recIssuer]"
+            logger "Subject that was expected: [$($expIssuer[$i])]"
+        } else { 
+            logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
+            logger "Subject that was returned: [$recIssuer]"
+            logger "Subject that was expected: [$($expIssuer[$i])]"
+            logger "PEM that was received: $PEM"
+            $failCounter++
+            $countFails++
+        }
     }
     $ssl.Dispose()
     $tcp.Close()
@@ -133,34 +152,19 @@ logger ""
 
  
 # test outgoing port 443 connectivity to Huntress URLs
-logger "-- Testing DNS resolution and port 80 connectivity --"
+logger "-- Verifying Huntress services can be reached --"
 foreach ($testURL in $testURLs) {
-    $StatusCode = 0
+    $tcp = New-Object System.Net.Sockets.TcpClient
     try {
-        $uri = ([uri]$testURL)
-        $Response   = Invoke-WebRequest -Uri $testURL -TimeoutSec 5 -ErrorAction Stop -ContentType "text/plain" -UseBasicParsing
-        $StatusCode = $Response.StatusCode
-        # Convert from bytes, if necessary
-        if ($Response.Content.GetType() -eq [System.Byte[]]) {
-            $StrContent = [System.Text.Encoding]::UTF8.GetString($Response.Content)
-        } else {
-            $StrContent = $Response.Content.ToString().Trim()
-        }
-        $StrContent = [string]::join("",($StrContent.Split("`n")))
+        $cleanURL = $($testURL -replace '^https://', '') -replace '/.*',''
+        $tcp.connect($cleanURL, 443)
+        logger "[Connection to $cleanURL successful]"
     } catch {
+        logger = "WARNING, connectivity to Huntress URL's is being interrupted. You MUST open port 443 for $cleanURL in order for the Huntress agent to function."
         logger "Error: $($_.Exception.Message)"
         $countFails++
-    }
-
-    $cleanURL = (($testURL.Split('/'))[0..2] -join '/')
-    if ($StatusCode -ne 200) {
-        logger = "WARNING, connectivity to Huntress URL's is being interrupted. You MUST open port 443 for $cleanURL in order for the Huntress agent to function. Status code: $StatusCode"
-        $countFails++
-    } elseif ( ! ($StrContent -eq "96bca0cef10f45a8f7cf68c4485f23a4")) {
-        logger = "WARNING, successful connection to Huntress URL, however, content did not match expected. Ensure no proxy or content filtering is preventing access!"
-        $countFails++
-    } else {
-        logger "[Connection to $cleanURL successful]"
+    } finally {
+        $tcp.Close()
     }
 }
 logger ""
