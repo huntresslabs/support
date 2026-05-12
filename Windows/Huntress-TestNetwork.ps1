@@ -3,7 +3,7 @@
 # 
 # <<< PowerShell version >>>
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: May 11, 2026"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: May 11, 2026 (release B)"
 
 
 # adds time stamp to a message and then writes that to the log file
@@ -121,7 +121,7 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
     if ($recIssuer -eq $expIssuer[$i]) {
         logger "[Certificate issuer validation successful for $cleanURL]"
     } else {
-        if ($recIssuer -like "*$($expIssuer[$i]))*") {
+		if ($recIssuer -like "*$($expIssuerName[$i])*") {
             logger "Please note this was not an exact match, which is expected with big infrastructure."
             logger "Subject that was returned: [$recIssuer]"
             logger "Subject that was expected: [$($expIssuer[$i])]"
