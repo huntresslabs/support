@@ -47,6 +47,11 @@ done
 # retrieve URLs, cert Issuer, and cert Subject from Huntress github
 URL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
 json="$(curl -fsSL --tlsv1.2 "$URL")"
+if [ $? -ne 0 ]; then
+     logger "Unable to connect to github, connectivity to raw.githubusercontent.com is required for this script!"
+     logger "Please contact Huntress Support if you have a business requirement for blocking githubusercontent.com and still need to test connectivity."
+     exit 1
+fi
 testURLs=()
 certURLs=()
 expSubject=()
