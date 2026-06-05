@@ -45,7 +45,12 @@ try {
         logger "Please contact Huntress Support if you have a business requirement for blocking githubusercontent.com and still need to test connectivity."
         exit 1
     }
-    $data = $jsonString | ConvertFrom-Json
+    try {
+        $data = $jsonString | ConvertFrom-Json
+    } catch {
+        logger "Failed to parse JSON from github: $_"
+        exit 1
+    }
 }
 # process the data from github
 $testURLs      = @($data.array1)
