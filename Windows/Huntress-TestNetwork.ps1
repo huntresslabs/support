@@ -3,14 +3,14 @@
 # 
 # <<< PowerShell version >>>
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: May 11, 2026 (release B)"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: June 5, 2026"
 
 
 # adds time stamp to a message and then writes that to the log file
 $DebugLog = "c:\Windows\temp\huntress_network_test.log"
 function logger ($msg) {
-	$TimeStamp = "[{0:yyyy/MM/dd} {0:HH:mm:ss}]" -f (Get-Date)
-	Add-Content $DebugLog "$TimeStamp $msg"
+    $TimeStamp = "[{0:yyyy/MM/dd} {0:HH:mm:ss}]" -f (Get-Date)
+    Add-Content $DebugLog "$TimeStamp $msg"
     Write-Output "$msg"
 }
 logger "-----------------------------------------------------------------------------"
@@ -33,16 +33,26 @@ try {
 # retrieve URLs, cert Issuer, and cert Subject from Huntress github
 $URL = 'https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
 try {
-    $data = Invoke-RestMethod -Uri $URL -UseBasicParsing -ErrorAction Stop
+    $data = (Invoke-WebRequest -Uri $URL -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
 } catch {
     logger "Fallback using WebClient (still uses TLS 1.2)"
     $wc = New-Object System.Net.WebClient
     $wc.Headers['User-Agent'] = 'HuntressSupportScript'
-    $jsonString = $wc.DownloadString($URL)
-    $data = $jsonString | ConvertFrom-Json
+    try {
+        $jsonString = $wc.DownloadString($URL)
+    } catch {
+        logger "Unable to connect to github, connectivity to raw.githubusercontent.com is required for this script!"
+        logger "Please contact Huntress Support if you have a business requirement for blocking githubusercontent.com and still need to test connectivity."
+        exit 1
+    }
+    try {
+        $data = $jsonString | ConvertFrom-Json
+    } catch {
+        logger "Failed to parse JSON from github: $_"
+        exit 1
+    }
 }
 # process the data from github
-$data = (Invoke-WebRequest -Uri $URL -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
 $testURLs      = @($data.array1)
 $certURLs      = @($data.array2)
 $certTemp      = @($data.array4)
@@ -64,7 +74,7 @@ logger "-- Testing DNS resolution and port 80 connectivity --"
 try {
     $pageOutput = $(Invoke-WebRequest "https://huntress.io" -UseBasicParsing)
     if ($pageOutput.StatusCode -eq 200) {
-        $pageOutput = $($pageOutput.Content) | Select-Object -First 14 | Select-Object -Last 1
+        $pageOutput = $($pageOutput.Content) | Select-Object -First 20 
         $startIndex = $pageOutput.IndexOf("<title>")
         if ($startIndex -ne -1) {
             $contentStart = $startIndex + 7
@@ -121,14 +131,14 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
     if ($recIssuer -eq $expIssuer[$i]) {
         logger "[Certificate issuer validation successful for $cleanURL]"
     } else {
-		if ($recIssuer -like "*$($expIssuerName[$i])*") {
+        if ($recIssuer -like "*$($expIssuerName[$i])*") {
             logger "Please note this was not an exact match, which is expected with big infrastructure."
-            logger "Subject that was returned: [$recIssuer]"
-            logger "Subject that was expected: [$($expIssuer[$i])]"
+            logger "Issuer that was returned: [$recIssuer]"
+            logger "Issuer that was expected: [$($expIssuer[$i])]"
         } else { 
             logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-            logger "Subject that was returned: [$recIssuer]"
-            logger "Subject that was expected: [$($expIssuer[$i])]"
+            logger "Issuer that was returned: [$recIssuer]"
+            logger "Issuer that was expected: [$($expIssuer[$i])]"
             logger "PEM that was received: $PEM"
             $failCounter++
             $countFails++
