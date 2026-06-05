@@ -79,7 +79,6 @@ done < <(echo "$json" | jq -r '.array5[] | select(length > 0)')
 # Simple test just to establish working DNS and basic internet connectivity
 logger "-- Testing DNS resolution and port 80 connectivity --"
 curlOutput="$(sudo curl -fsS --connect-timeout 5 --max-time 10 "https://huntress.io" 2>&1 | head -n 20 )"
-status=$?
 if [[ "$curlOutput" == *"<title>Huntress Management Console</title>"* ]]; then
      logger "[DNS Resolution / port 80 connection successful]"
 else
