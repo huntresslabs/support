@@ -5,7 +5,7 @@
 # 
 # <<< Bash version >>>
 
-latestUpdate="Huntress Network Tester, macOS and Linux Bash, last updated May 11, 2026"
+latestUpdate="Huntress Network Tester, macOS and Linux Bash, last updated June 5, 2026"
 
 
 # adds time stamp to a message and then writes that to the log file
@@ -78,9 +78,8 @@ done < <(echo "$json" | jq -r '.array5[] | select(length > 0)')
 
 # Simple test just to establish working DNS and basic internet connectivity
 logger "-- Testing DNS resolution and port 80 connectivity --"
-curlOutput="$(sudo curl -fsS --connect-timeout 5 --max-time 10 "https://huntress.io" 2>&1 | head -n 14 | tail -n 1)"
-status=$?
-if [ "$curlOutput" == "<title>Huntress Management Console</title>" ]; then
+curlOutput="$(sudo curl -fsS --connect-timeout 5 --max-time 10 "https://huntress.io" 2>&1 | head -n 20 )"
+if [[ "$curlOutput" == *"<title>Huntress Management Console</title>"* ]]; then
      logger "[DNS Resolution / port 80 connection successful]"
 else
      logger "[FAILED: DNS and port 80 checks] $curlOutput"
@@ -117,14 +116,14 @@ for (( i=0; i<numEntries; i++ )); do
      else
           if [[ "$recIssuer" == *"${expIssuer[i]}"* ]]; then
                logger "Please note this was not an exact match, which is expected with big infrastructure."
-               logger "Subject that was returned: [$recIssuer]"
-               logger "Subject that was expected: [${expIssuer[i]}]"
+               logger "Issuer that was returned: [$recIssuer]"
+               logger "Issuer that was expected: [${expIssuer[i]}]"
           else
                ((certFailCounter++))
                ((countFails++))
                logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-               logger "Subject that was returned: [$recIssuer]"
-               logger "Subject that was expected: [${expIssuer[i]}]"
+               logger "Issuer that was returned: [$recIssuer]"
+               logger "Issuer that was expected: [${expIssuer[i]}]"
                logger "PEM that was received: $PEM"
           fi
      fi
