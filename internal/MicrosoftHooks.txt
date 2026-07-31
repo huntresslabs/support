@@ -110,3 +110,15 @@
 \windows\system32\ncrypt.dll
 \windows\system32\ntasn1.dll
 \windows\system32\gdi32full_hotpatch.dll
+\windows\system32\credssp.dll
+\windows\system32\dfscli.dll
+\windows\system32\imm32.dll
+\windows\system32\lpk.dll
+\windows\system32\msctf.dll
+\windows\system32\ntmarta.dll
+\windows\system32\rpcrtremote.dll
+\windows\system32\sensapi.dll
+\windows\system32\setupapi.dll
+\windows\system32\usp10.dll
+\windows\system32\wship6.dll
+\windows\system32\wshtcpip.dll
