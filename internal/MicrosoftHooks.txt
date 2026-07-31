@@ -122,3 +122,4 @@
 \windows\system32\usp10.dll
 \windows\system32\wship6.dll
 \windows\system32\wshtcpip.dll
+\windows\system32\pwdssp.dll
