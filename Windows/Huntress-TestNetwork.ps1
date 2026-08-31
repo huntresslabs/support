@@ -10,7 +10,7 @@
 # <<< PowerShell version >>>
 
 $latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: August 31, 2026"
-$localJSON    = "URLdata.json"
+$localJSON    = Join-Path $PSScriptRoot "URLdata.json"
 $DebugLog     = "c:\Windows\temp\huntress_network_test.log"
 $countFails   = 0
 
@@ -252,7 +252,9 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
         $countFails++
         $failURLs += $cleanURL
     } finally {
-        $ssl.Dispose()
+        if ($null -ne $ssl) {
+            $ssl.Dispose()
+        }
         $tcp.Close()
     }
 }
