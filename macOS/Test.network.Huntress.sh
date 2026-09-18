@@ -34,6 +34,7 @@ declare -a testURLs=()
 declare -a certURLs=()
 declare -a expIssuer=()
 declare -a expSubject=()
+declare -a expIssuerName=()
 
 # Exit the script with error if a required dependency is missing
 function checkDependency {
@@ -111,7 +112,7 @@ function getJSON {
           certURLs+=($(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||'))
      done < <(cat "$localJSON" | jq -r '.array2[] | select(length > 0)')
      # even array indices are Subjects, odd are Issuer. 
-     count=0
+     count=0    
      while IFS= read -r item; do
           [ -z "$item" ] && continue
           if (( $count % 2 == 0 )); then
@@ -125,6 +126,12 @@ function getJSON {
           [ -z "$item" ] && continue
           expIssuerName+=("$item")
      done < <(cat "$localJSON" | jq -r '.array5[] | select(length > 0)')
+
+     # If the data wasn't ingested into the arrays, exit with error (likely a corrupted JSON download)
+     if [[ ${#testURLs[@]} -eq 0 || ${#certURLs[@]} -eq 0 || ${#expSubject[@]} -eq 0 || ${#expIssuer[@]} -eq 0 || ${#expIssuerName[@]} -eq 0 ]]; then
+          logger "Error reading data from JSON file. Delete the local JSON file and try again."
+          exit 1
+     fi
 }
 
 # Simple test just to establish working DNS and basic internet connectivity
@@ -185,7 +192,7 @@ function certTest {
      done
      if [[ "$certFailCounter" > 0 ]]; then
           for i in "${!failURLs[@]}"; do
-               certFail $failURLs[i]
+               certFail "${failURLs[i]}"
           done
      fi
      logger ""
