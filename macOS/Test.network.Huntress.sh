@@ -18,9 +18,9 @@ latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 2
 DebugLog="huntress_network_test.log"
 
 # If you want to force the alternate location and never use the working directory, change $localJSON to your desired value. Example:
-# $localJSON = "c:\Users\Public\URLdata.json"
+# localJSON = "c:\Users\Public\URLdata.json"
 localJSON="./URLdata.json"
-altJSON="/tmp/URLdata.json"
+altJSON="/tmp/"
 
 # adds time stamp to a message and then writes that to the log file
 dd=$(date "+%Y-%m-%d  %H:%M:%S")
@@ -87,6 +87,7 @@ declare -a expIssuerName=()
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
+     altJSONtemp="$altJSON/URLdata.json"
      # try to use the local JSON first
      if [[ -f $localJSON ]]; then
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
@@ -99,8 +100,8 @@ function getLocalJSON {
                getJSON 1
           fi
      # if local JSON isn't found, use alternate
-     elif [[ -f $altJSON ]]; then
-          localJSON=$altJSON
+     elif [[ -f "$altJSONtemp" ]]; then
+          localJSON=$altJSONtemp
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
                lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
                logger "Using alternate JSON file ($localJSON) from $lastWrite"
@@ -110,18 +111,18 @@ function getLocalJSON {
                getJSON 1
           fi
      else 
-          # local not found but writable, download fresh copy from github 
-          if [[ -w $localJSON ]]; then
+          # local file not found but directory is writable, download fresh copy from github 
+          if [[ -w "./" ]]; then
                getJSON 1
-          # alternate not found but writable, download fresh copy from github to alternate location
+          # alternate not found but directory is writable, download fresh copy from github to alternate location
           elif [[ -w $altJSON ]]; then
-               localJSON=$altJSON
+               localJSON=$altJSONtemp
                getJSON 1
-          # else exit the script
+          # else exit the script with error
           else
                logger "Unable to write to either local or alternate JSON files:"
                logger "$localJSON"
-               logger "$altJSON"
+               logger "$altJSONtemp"
                exit 1
           fi
      fi
