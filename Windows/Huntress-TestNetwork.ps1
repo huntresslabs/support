@@ -1,18 +1,18 @@
 # Tests a number of ways Huntress agents communicate with the Huntress portal, essentially a TCP port 443 connection outbound.
 # This effectively tests connectivity as well as checks for certificate interception/inspection services which will prevent the
 # Huntress agent from communicating with the Huntress portal.
-# This script should function in PowerShell versions 3 through 7.
+#
+# This script is designed for use in PowerShell versions 3 through 7. 
+# PoSh 2.x is missing ConvertFrom-Json, out of the box native TLS 1.2 support, and would require .NET that isn't always installed.
 #
 # If the file URLdata.json is found and not more than 2 weeks old, use that file, otherwise the script downloads from github.
 # So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
-#
-# <<< PowerShell version >>>
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: August 31, 2026"
-$localJSON    = Join-Path $PSScriptRoot "URLdata.json"
+
+# this section marker is for internal use -->
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: September 21, 2026"
 $DebugLog     = "c:\Windows\temp\huntress_network_test.log"
-$countFails   = 0
 
 # adds time stamp to a message and then writes that to the log file
 function logger ($msg) {
@@ -21,12 +21,59 @@ function logger ($msg) {
     Write-Output "$msg"
 }
 
+logger "-----------------------------------------------------------------------------"
+logger $latestUpdate
+logger "-----------------------------------------------------------------------------"
+# <--
+
+
+# Setup some global variables for use (only variables that functions write to need 'script' scoping)
+$localJSON = Join-Path $(Split-Path -Parent -Path $MyInvocation.MyCommand.Definition) "URLdata.json"
+$script:countFails    = 0
+$script:testURLs      = @()
+$script:certURLs      = @()
+$script:expIssuerName = @()
+$script:expSubject    = @()
+$script:expIssuer     = @()
+
+# Select a secure TLS protocol for the current PowerShell process. This must occur before any communication.
+function setNetworking {
+    # Keep "First Run Customize" popup window from blocking the testing (by disabling it)
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main" -Name "DisableFirstRunCustomize" -Value 2
+
+    try {
+        try {
+            $ProtocolsSupported = [System.Enum]::GetValues([System.Net.SecurityProtocolType])
+            # Only TLS 1.3 or 1.2 are supported for secure communication with the Huntress portal
+            if ( ($ProtocolsSupported -contains 'Tls13') -and ($ProtocolsSupported -contains 'Tls12') ) {
+                [System.Net.ServicePointManager]::SecurityProtocol = (
+                    [System.Enum]::ToObject([System.Net.SecurityProtocolType], 12288) -bOR [System.Enum]::ToObject([System.Net.SecurityProtocolType], 3072)
+                )
+            } else {
+                # In certain .NET 4.0 patch levels, SecurityProtocolType does not have a TLS 1.2 entry.
+                # Rather than check for 'Tls12', we force-set TLS 1.2 and catch the error if it's truly unsupported.
+                # Note that these legacy systems will also need some manual configuration work before using protocol 3072 (TLS 1.2)
+                # See: https://support.microsoft.com/en-us/topic/support-for-tls-system-default-versions-included-in-the-net-framework-2-0-sp2-on-windows-vista-sp2-and-server-2008-sp2-1001add1-103f-0a22-e807-00ee2fc7c75d
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Enum]::ToObject([System.Net.SecurityProtocolType], 3072)
+            }
+        } catch {
+            $msg = $_.Exception.Message
+            logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
+            logger "$msg"
+            throw $msg
+        }
+    } catch {
+        $msg = $_.Exception.Message
+        logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
+        logger "$msg"
+        throw $msg
+    }
+}
+
 # The data on github is purposely over-verbose for future use, so we strip extra characters.
 function cleanURL {
-    param (
-        [Parameter(Mandatory = $true)]
-        [ref]$ArrayRef
-    )
+    param ( [Parameter(Mandatory = $true)]
+            [ref]$ArrayRef )
 
     # Access the actual array using .Value (i.e. modifying the array that was passed, not a copy of it)
     $targetArray = $ArrayRef.Value
@@ -38,10 +85,8 @@ function cleanURL {
 
 # Helper function to print lengthy error/instructional message
 function certFail {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$cleanURL
-    )
+    param ( [Parameter(Mandatory = $true)]
+            [string]$cleanURL )
     logger "------------------------------------------------------------------------------------------------------------------------------"
     logger "The Subject/Issuer text above usually identifies if this is a DPI/cert interception issue, or a cert chain issue."
     logger "* If the returned SUBJECT does not contain 'Huntress' or 'Microsoft' in the text this is likely a DPI/cert interception issue."
@@ -56,10 +101,8 @@ function certFail {
 # Pass a [int]1 to download a fresh copy of the JSON data, or [int]0 to use a local copy
 # Function populates $data array with the resulting file contents
 function getJSON {
-    param (
-        [Parameter(Mandatory = $true)]
-        [int]$downloadFromGithub
-    )
+    param ( [Parameter(Mandatory = $true)]
+            [int]$downloadFromGithub )
 
     # Attempt to download the JSON from github if prompted by $downloadFromGithub
     if ($downloadFromGithub -eq 1) {
@@ -84,210 +127,193 @@ function getJSON {
         }
     }
 
-    # Read text lines from file and convert them into a JSON array
+    # Read text lines from file and convert them into a JSON array. Not using ConvertFrom-Json as PowerShell 2.0 doesn't support it.
     [array]$global:data = @(Get-Content -Path $localJSON -Raw | ConvertFrom-Json)
-}
+    #  Note if you really need PoSh 2.0 compatibility you can comment the line above, and uncomment the 4 lines below
+    #  You will need TLS 1.2 setup, .NET 3.5, and may need some registry patches to accomplish those. More info here:
+    #  https://stackoverflow.com/questions/28077854/powershell-2-0-convertfrom-json-and-convertto-json-implementation
+    #  https://knowledge.digicert.com/quovadis/ssl-certificates/ssl-general-topics/how-to-enable-tls-1-2-on-windows-server-2008-r2
+    #Add-Type -AssemblyName System.Web.Extensions
+    #$jsonString = Get-Content -Path $localJSON
+    #$serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+    #[array]$data = $serializer.DeserializeObject($jsonString)
 
-
-# Keep "First Run Customize" popup window from blocking the testing (by disabling it)
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main" -Name "DisableFirstRunCustomize" -Value 2
-
-# Select a secure TLS protocol for the current PowerShell process. This must occur before any communication.
-try {
-    try {
-        $ProtocolsSupported = [System.Enum]::GetValues([System.Net.SecurityProtocolType])
-        # Only TLS 1.3 or 1.2 are supported for secure communication with the Huntress portal
-        if ( ($ProtocolsSupported -contains 'Tls13') -and ($ProtocolsSupported -contains 'Tls12') ) {
-            [System.Net.ServicePointManager]::SecurityProtocol = (
-                [System.Enum]::ToObject([System.Net.SecurityProtocolType], 12288) -bOR [System.Enum]::ToObject([System.Net.SecurityProtocolType], 3072)
-            )
+    # process the data from the $data array
+    $script:testURLs      = @($data.array1)
+    $script:certURLs      = @($data.array2)
+    $certTemp             = @($data.array4)
+    $script:expIssuerName = @($data.array5)
+    # array4 contains two different sets of info, even indices are subject, odd indices are issuer
+    for ($i = 0; $i -lt $certTemp.Count; $i++) {
+        if ($i % 2 -eq 0) {
+            $script:expSubject += $certTemp[$i]
         } else {
-            # In certain .NET 4.0 patch levels, SecurityProtocolType does not have a TLS 1.2 entry.
-            # Rather than check for 'Tls12', we force-set TLS 1.2 and catch the error if it's truly unsupported.
-            # Note that these legacy systems will also need some manual configuration work before using protocol 3072 (TLS 1.2)
-            # See: https://support.microsoft.com/en-us/topic/support-for-tls-system-default-versions-included-in-the-net-framework-2-0-sp2-on-windows-vista-sp2-and-server-2008-sp2-1001add1-103f-0a22-e807-00ee2fc7c75d
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Enum]::ToObject([System.Net.SecurityProtocolType], 3072)
+            $script:expIssuer += $certTemp[$i]
         }
-    } catch {
-        $msg = $_.Exception.Message
-        logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
-        logger "$msg"
-        throw $msg
     }
-} catch {
-    $msg = $_.Exception.Message
-    logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
-    logger "$msg"
-    throw $msg
+    # process the URL strings from github for use
+    cleanURL -ArrayRef ([ref]$script:testURLs)
+    cleanURL -ArrayRef ([ref]$script:certURLs)
 }
-
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
-if (Test-Path -Path $localJSON) {
-    $lastWrite = (Get-Item $localJSON).LastWriteTime
-    if ($lastWrite -gt ((Get-Date).AddDays(-14))) {
-        logger "Using local URLdata.json from $lastWrite `n"
-        getJSON 0
+function getLocalJSON {
+    if (Test-Path -Path $localJSON) {
+        $lastWrite = (Get-Item $localJSON).LastWriteTime
+        if ($lastWrite -gt ((Get-Date).AddDays(-14))) {
+            logger "Using local URLdata.json from $lastWrite `n"
+            getJSON 0
+        } else {
+            logger "Attempting to retrieve URLdata.json from github`n"
+            getJSON 1
+        }
     } else {
         logger "Attempting to retrieve URLdata.json from github`n"
         getJSON 1
     }
-} else {
-    logger "Attempting to retrieve URLdata.json from github`n"
-    getJSON 1
 }
-
-# process the data from the $data array
-$testURLs      = @($data.array1)
-$certURLs      = @($data.array2)
-$certTemp      = @($data.array4)
-$expIssuerName = @($data.array5)
-$expSubject    = @()
-$expIssuer     = @()
-# array4 contains two different sets of info, even indices are subject, odd indices are issuer
-for ($i = 0; $i -lt $certTemp.Count; $i++) {
-    if ($i % 2 -eq 0) {
-        $expSubject += $certTemp[$i]
-    } else {
-        $expIssuer += $certTemp[$i]
-    }
-}
-# process the URL strings from github for use
-cleanURL -ArrayRef ([ref]$testURLs)
-cleanURL -ArrayRef ([ref]$certURLs)
-
-
-logger "-----------------------------------------------------------------------------"
-logger $latestUpdate
-logger "-----------------------------------------------------------------------------"
 
 # Simple test to establish working DNS, basic internet connectivity, and ability to connect to huntress.io
-logger "-- Testing DNS resolution and port 443 connectivity --"
-try {
-    $pageOutput = $(Invoke-WebRequest "https://huntress.io" -UseBasicParsing)
-    if ($pageOutput.StatusCode -eq 200) {
-        $pageOutput = $($pageOutput.Content) | Select-Object -First 20 
-        $startIndex = $pageOutput.IndexOf("<title>")
-        if ($startIndex -ne -1) {
-            $contentStart = $startIndex + 7
-            $result = $pageOutput.Substring($contentStart, 27)
-            logger "[DNS Resolution / port 443 connection successful]"
+function simpleTest {
+    logger "-- Testing DNS resolution and port 443 connectivity --"
+    try {
+        $pageOutput = $(Invoke-WebRequest "https://huntress.io" -UseBasicParsing)
+        if ($pageOutput.StatusCode -eq 200) {
+            $pageOutput = $($pageOutput.Content) | Select-Object -First 20 
+            $startIndex = $pageOutput.IndexOf("<title>")
+            if ($startIndex -ne -1) {
+                $contentStart = $startIndex + 7
+                $result = $pageOutput.Substring($contentStart, 27)
+                logger "[DNS Resolution / port 443 connection successful]"
+            } else {
+                logger "The tag '<title>' was not found."
+                $script:countFails++
+            }
         } else {
-            logger "The tag '<title>' was not found."
-            $countFails++
+            logger "[FAILED: DNS and port 443 checks]"
+            $script:countFails++
         }
-    } else {
-        logger "[FAILED: DNS and port 443 checks]"
-        $countFails++
+    } catch {
+        logger "Error interacting with Invoke-WebRequest: $_"
+        $script:countFails++
     }
-} catch {
-    logger "Error interacting with Invoke-WebRequest: $_"
-    $countFails++
+    logger ""
 }
-logger ""
-
 
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
-logger "-- Testing Certificate Validation --"
-$failCounter = 0
-$failURLs    = @()
-$i           = 0
-# for each URL, establish secure TCP connection and grab the certificate and subject lines to compare with known-good values.
-foreach ($cleanURL in $certURLs) {
-    $uri = ([uri]$cleanURL)
-    $tcp = $null
-    $ssl = $null
-    try {
-        $tcp = New-Object Net.Sockets.TcpClient
-        $tcp.Connect("$uri", 443)
-        $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
-        $ssl.AuthenticateAsClient($uri)
-        $cert       = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-        $recSubject = $cert.Subject
-        $recIssuer  = $cert.Issuer
-        # retrieve a hashed/encrypted version of the certificate to log in case troubleshooting is required
-        # Note: the 5 lines below must remain at their current indentation!
-        $PEM = @"
+function certTest {
+    logger "-- Testing Certificate Validation --"
+    $failCounter = 0
+    $failURLs    = @()
+    $i           = 0
+    # for each URL, establish secure TCP connection and grab the certificate and subject lines to compare with known-good values.
+    foreach ($cleanURL in $script:certURLs) {
+        $uri = ([uri]$cleanURL)
+        $tcp = $null
+        $ssl = $null
+        try {
+            $tcp = New-Object Net.Sockets.TcpClient
+            $tcp.Connect("$uri", 443)
+            $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
+            $ssl.AuthenticateAsClient($uri)
+            $cert       = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            $recSubject = $cert.Subject
+            $recIssuer  = $cert.Issuer
+            # retrieve a hashed/encrypted version of the certificate to log in case troubleshooting is required
+            # Note: the 5 lines below must remain at their current indentation!
+            $PEM = @"
 -----BEGIN CERTIFICATE-----
 $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks))
 -----END CERTIFICATE-----
 "@
 
-        if ($recSubject -eq $expSubject[$i]) {
-            logger "[Certificate subject validation successful for $cleanURL]"
-        } else {
-            logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
-            logger "Subject that was returned: [$recSubject]"
-            logger "Subject that was expected: [$($expSubject[$i])]"
-            $failCounter++
-            $countFails++
-            $failURLs += $cleanURL
-        }
-
-        # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
-        if ($recIssuer -eq $expIssuer[$i]) {
-            logger "[Certificate issuer validation successful for $cleanURL]"
-        } else {
-            # Wildcard match compensates for big infrastructure where the leaf cert's might vary slightly
-            if ($recIssuer -like "*$($expIssuerName[$i])*") {
-                logger "Please note this was not an exact match, which is expected with big infrastructure."
-                logger "Issuer that was returned: [$recIssuer]"
-                logger "Issuer that was expected: [$($expIssuer[$i])]"
-            } else { 
-                logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-                logger "Issuer that was returned: [$recIssuer]"
-                logger "Issuer that was expected: [$($expIssuer[$i])]"
-                logger "PEM that was received: $PEM"
+            # Check for Subject match. No need for wildcards as these should all be static Huntress certs.
+            if ($recSubject -eq $script:expSubject[$i]) {
+                logger "[Certificate subject validation successful for $cleanURL]"
+            } else {
+                logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
+                logger "Subject that was returned: [$recSubject]"
+                logger "Subject that was expected: [$($script:expSubject[$i])]"
                 $failCounter++
-                $countFails++
+                $script:countFails++
                 $failURLs += $cleanURL
             }
-        }
-        $i++
-    } catch {
-        logger "Error: $($_.Exception.Message)"
-        logger "[Error during certificate validation for '$cleanURL'!]"
-        $i++
-        $failCounter++
-        $countFails++
-        $failURLs += $cleanURL
-    } finally {
-        if ($null -ne $ssl) {
-            $ssl.Dispose()
-        }
-        $tcp.Close()
-    }
-}
-# If we see any fails, print more info about those failures.
-if ($failCounter -gt 0) {
-    foreach ($failURL in $failURLs) {
-        certFail $failURL
-    }
-}
-logger ""
 
+            # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
+            if ($recIssuer -eq $script:expIssuer[$i]) {
+                logger "[Certificate issuer validation successful for $cleanURL]"
+            } else {
+                # Wildcard match compensates for big infrastructure where the leaf cert's might vary slightly
+                if ($recIssuer -like "*$($script:expIssuerName[$i])*") {
+                    logger "Please note this was not an exact match, which is expected with big infrastructure."
+                    logger "Issuer that was returned: [$recIssuer]"
+                    logger "Issuer that was expected: [$($script:expIssuer[$i])]"
+                } else { 
+                    logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
+                    logger "Issuer that was returned: [$recIssuer]"
+                    logger "Issuer that was expected: [$($script:expIssuer[$i])]"
+                    logger "PEM that was received: $PEM"
+                    $failCounter++
+                    $script:countFails++
+                    $failURLs += $cleanURL
+                }
+            }
+            $i++
+        } catch {
+            logger "Error: $($_.Exception.Message)"
+            logger "[Error during certificate validation for '$cleanURL'!]"
+            $i++
+            $failCounter++
+            $script:countFails++
+            $failURLs += $cleanURL
+        } finally {
+            if ($null -ne $ssl) {
+                $ssl.Dispose()
+            }
+            $tcp.Close()
+        }
+    }
+    # If we see any fails, print more info about those failures.
+    if ($failCounter -gt 0) {
+        foreach ($failURL in $failURLs) {
+            certFail $failURL
+        }
+    }
+    logger ""
+}
 
 # test outgoing port 443 connectivity to Huntress URLs
-logger "-- Verifying Huntress services can be reached --"
-foreach ($testURL in $testURLs) {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    try {
-        $tcp.connect($testURL, 443)
-        logger "[Connection to $testURL successful]"
-    } catch {
-        logger "WARNING, connectivity to Huntress URL's is being interrupted. You MUST open port 443 for $testURL in order for the Huntress agent to function."
-        logger "Error: $($_.Exception.Message)"
-        $countFails++
-    } finally {
-        $tcp.Close()
+function tcpTest {
+    logger "-- Verifying Huntress services can be reached --"
+    foreach ($testURL in $script:testURLs) {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $tcp.connect($testURL, 443)
+            logger "[Connection to $testURL successful]"
+        } catch {
+            logger "WARNING, connectivity to Huntress URL's is being interrupted. You MUST open port 443 for $testURL in order for the Huntress agent to function."
+            logger "Error: $($_.Exception.Message)"
+            $script:countFails++
+        } finally {
+            $tcp.Close()
+        }
     }
+    logger ""
 }
-logger ""
 
-if ($countFails -gt 0) {
+
+setNetworking
+getLocalJSON
+simpleTest
+tcpTest
+certTest
+
+# this section marker is for internal use -->
+if ($script:countFails -gt 0) {
     logger "[FAILED to connect to all Huntress services]"
     logger "------------------------ FAILED network test ----------------------------------"
 } else {
     logger "[Successfully connected to Huntress services]"
     logger "---------------------- Network testing complete --------------------------------"
 }
+# <--
