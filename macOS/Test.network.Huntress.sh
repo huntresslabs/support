@@ -1,12 +1,26 @@
 #!/bin/bash
 
-# Tests a number of ways Huntress agents communicate with the Huntress portal
-# Output is to standard out as well as the file represented by $DebugLog
+# Tests a number of ways Huntress agents communicate with the Huntress portal, essentially a TCP port 443 connection outbound.
+# This effectively tests connectivity as well as checks for certificate interception/inspection services which will prevent the
+# Huntress agent from communicating with the Huntress portal.
+#
+# This script is designed for use in all macOS and Linux distros/versions that Huntress supports, however some distros may be missing
+# dependencies that Huntress uses in this script, primarily curl, jq, openssl, and nc.
+# https://support.huntress.io/hc/en-us/articles/4410699983891-Supported-Operating-Systems-System-Requirements-Compatibility
+#
+# If the file URLdata.json is found and not more than 2 weeks old, use that file, otherwise the script downloads from github.
+# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
+#    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
 
-# this section marker is for internal use -->
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 18, 2026"
+# --> this section marker is for internal use 
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 21, 2026"
 DebugLog="huntress_network_test.log"
+
+# If you want to force the alternate location and never use the working directory, change $localJSON to your desired value. Example:
+# $localJSON = "c:\Users\Public\URLdata.json"
+localJSON="./URLdata.json"
+altJSON="/tmp/URLdata.json"
 
 # adds time stamp to a message and then writes that to the log file
 dd=$(date "+%Y-%m-%d  %H:%M:%S")
@@ -18,23 +32,19 @@ logger() {
 logger "-----------------------------------------------------------------------------"
 logger $latestUpdate
 logger "-----------------------------------------------------------------------------"
-# <--
 
-# How old (in days) the local JSON can be before it's ignored. 14 days is suggested.
-gracePeriodForJSON=14
-
-# File name of JSON file from github. "./URLdata.json" is the default.
-localJSON="./URLdata.json"
-
-# Setup some global variables
-gitURL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
-countFails=0
-certFailCounter=0
-declare -a testURLs=()
-declare -a certURLs=()
-declare -a expIssuer=()
-declare -a expSubject=()
-declare -a expIssuerName=()
+# Simple test just to establish working DNS and basic internet connectivity
+function simpleTest {
+     logger "-- Testing DNS resolution and port 443 connectivity --"
+     curlOutput="$(sudo curl -fsS --connect-timeout 5 --max-time 10 "https://huntress.io" 2>&1 | head -n 20 )"
+     if [[ "$curlOutput" == *"<title>Huntress Management Console</title>"* ]]; then
+          logger "[DNS Resolution / port 443 connection successful]"
+     else
+          logger "[FAILED: DNS and port 443 checks] $curlOutput"
+          ((countFails++))
+     fi
+     logger ""
+}
 
 # Exit the script with error if a required dependency is missing
 function checkDependency {
@@ -59,24 +69,61 @@ function checkDependency {
           fi
      done
 }
+# <--------------------------------------------------------------------------------------
+
+# How old (in days) the local JSON can be before it's ignored. 14 days is suggested.
+gracePeriodForJSON=14
+
+# Setup some global variables
+gitURL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
+countFails=0
+certFailCounter=0
+declare -a testURLs=()
+declare -a certURLs=()
+declare -a expIssuer=()
+declare -a expSubject=()
+declare -a expIssuerName=()
+
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
-     #echo $(find "./URLdata.json" -type f -mtime -14 -print)
-
-     if [ -f $localJSON ]; then
+     # try to use the local JSON first
+     if [[ -f $localJSON ]]; then
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
                lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
                logger "Using local URLdata.json from $lastWrite"
                logger 
                getJSON 0
           else
-               logger "Local JSON file too old to safely use, attempting to retrieve URLdata.json from github"
+               logger "Local JSON file is stale, downloading new version from github"
+               getJSON 1
+          fi
+     # if local JSON isn't found, use alternate
+     elif [[ -f $altJSON ]]; then
+          localJSON=$altJSON
+          if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
+               lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
+               logger "Using alternate JSON file ($localJSON) from $lastWrite"
+               getJSON 0
+          else
+               logger "Alternate JSON file ($localJSON) too old to safely use, attempting to retrieve from github"
                getJSON 1
           fi
      else 
-          logger "Local JSON file not found, attempting to retrieve URLdata.json from github"
-          getJSON 1
+          # local not found but writable, download fresh copy from github 
+          if [[ -w $localJSON ]]; then
+               getJSON 1
+          # alternate not found but writable, download fresh copy from github to alternate location
+          elif [[ -w $altJSON ]]; then
+               localJSON=$altJSON
+               getJSON 1
+          # else exit the script
+          else
+               logger "Unable to write to either local or alternate JSON files:"
+               logger "$localJSON"
+               logger "$altJSON"
+               exit 1
+          fi
      fi
 }
 
@@ -132,19 +179,6 @@ function getJSON {
           logger "Error reading data from JSON file. Delete the local JSON file and try again."
           exit 1
      fi
-}
-
-# Simple test just to establish working DNS and basic internet connectivity
-function simpleTest {
-     logger "-- Testing DNS resolution and port 443 connectivity --"
-     curlOutput="$(sudo curl -fsS --connect-timeout 5 --max-time 10 "https://huntress.io" 2>&1 | head -n 20 )"
-     if [[ "$curlOutput" == *"<title>Huntress Management Console</title>"* ]]; then
-          logger "[DNS Resolution / port 443 connection successful]"
-     else
-          logger "[FAILED: DNS and port 443 checks] $curlOutput"
-          ((countFails++))
-     fi
-     logger ""
 }
 
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
@@ -234,7 +268,7 @@ simpleTest
 tcpTest
 certTest
 
-# this section marker is for internal use -->
+# --> this section marker is for internal use
 if [ "$countFails" -gt 0 ]; then
      logger "[FAILED to connect to all Huntress services]"
      logger "------------------------ FAILED network test ----------------------------------"
@@ -242,4 +276,4 @@ else
      logger "[Successfully connected to Huntress services]"
      logger "---------------------- Network testing complete --------------------------------"
 fi
-# <--
+# <--------------------------------------------------------------------------------------
