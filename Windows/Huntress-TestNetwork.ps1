@@ -134,7 +134,7 @@ function getJSON {
     #  https://stackoverflow.com/questions/28077854/powershell-2-0-convertfrom-json-and-convertto-json-implementation
     #  https://knowledge.digicert.com/quovadis/ssl-certificates/ssl-general-topics/how-to-enable-tls-1-2-on-windows-server-2008-r2
     #Add-Type -AssemblyName System.Web.Extensions
-    #$jsonString = Get-Content -Path $localJSON -Raw
+    #$jsonString = Get-Content -Path $localJSON
     #$serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
     #[array]$data = $serializer.DeserializeObject($jsonString)
 
