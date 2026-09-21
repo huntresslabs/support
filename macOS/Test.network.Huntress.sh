@@ -17,8 +17,10 @@
 latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 21, 2026"
 DebugLog="huntress_network_test.log"
 
-# If you want to force the alternate location and never use the working directory, change $localJSON to your desired value. Example:
-# localJSON = "c:\Users\Public\URLdata.json"
+# If you want to force the alternate location and never use the working directory, change the variable localJSON to your desired value. 
+# The location must be writable for the user who is running the script!
+#     Example (must use URLdata.json as file name):
+# localJSON="/var/tmp/"
 localJSON="./URLdata.json"
 altJSON="/tmp/"
 
