@@ -90,8 +90,8 @@ declare -a expIssuerName=()     # used for wildcard matching
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
-     if [[ -z $localJSONtemp ]]; then
-          localJSON=$localJSONtemp+"URLdata.json"
+     if ! [[ -z $localJSONtemp ]]; then
+          localJSON="${localJSONtemp}URLdata.json"
      fi
      # try to use the local JSON first
      if [[ -f $localJSON ]]; then
