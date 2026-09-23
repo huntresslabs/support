@@ -137,7 +137,7 @@ function getLocalJSON {
             logger "Using alternate local URLdata.json ($($netDataObject.altJSON)) from $lastWrite `n"
             getJSON $netDataObject
         } else {
-            logger "$localJSON (alternate location) is stale, downloading new version from github"
+            logger "$($netDataObject.localJSON) (alternate location) is stale, downloading new version from github"
             getJSON $netDataObject -downloadFromGithub
         }
     # Otherwise download github to localJSON if writable, alternate otherwise
