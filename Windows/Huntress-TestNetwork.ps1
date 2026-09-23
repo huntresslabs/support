@@ -265,7 +265,7 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
                 logger "[Certificate issuer validation successful for $cleanURL]"
             } else {
                 # Wildcard match compensates for big infrastructure where the leaf cert's might vary slightly
-                if ($recIssuer -like "*$($singleCert.expIssuer)*") {
+                if ($recIssuer -like "*$($singleCert.expIssuerName)*") {
                     logger "Please note this was not an exact match, which is expected with big infrastructure."
                     logger "Issuer that was returned: [$recIssuer]"
                     logger "Issuer that was expected: [$($singleCert.expIssuer)]"
