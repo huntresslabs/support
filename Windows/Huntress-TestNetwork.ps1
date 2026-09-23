@@ -295,7 +295,6 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
     # If we see any fails, print more info about those failures.
     if ($failCounter -gt 0) {
         foreach ($failURL in $failURLs) {
-            echo "failURL - $failURL"
             certFail $failURL
         }
     }
