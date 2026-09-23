@@ -198,8 +198,9 @@ function certTest {
           recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
           recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
-          if [[ -z $recSubject || -z $recSubject ]]; then
+          if [[ -z $recSubject || -z $recIssuer ]]; then
                logger "WARNING: Unable to retrieve certificate data! Exiting."
+               exit 1
           fi
           if [[ "$recSubject" == "${expSubject[i]}" ]]; then
                logger "[Certificate subject validation successful for $cleanURL]"
