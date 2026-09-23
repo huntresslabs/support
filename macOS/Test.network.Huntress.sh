@@ -14,15 +14,14 @@
 
 
 # --> this section marker is for internal use 
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 21, 2026"
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 23, 2026"
 DebugLog="huntress_network_test.log"
 
-# If you want to force the alternate location and never use the working directory, change the variable localJSON to your desired value. 
+# If you want to force the JSON file location and never use the working directory, uncomment and change localJSONtemp to your desired directory. 
 # The location must be writable for the user who is running the script!
-#     Example (must use URLdata.json as file name):
-# localJSON="/var/tmp/"
-localJSON="./URLdata.json"
-altJSON="/tmp/"
+#     Examples / Suggested locations:
+# localJSONtemp="/var/tmp/"
+# localJSONtemp="/tmp/"
 
 # adds time stamp to a message and then writes that to the log file
 dd=$(date "+%Y-%m-%d  %H:%M:%S")
@@ -78,18 +77,22 @@ gracePeriodForJSON=14
 
 # Setup some global variables
 gitURL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
+localJSON="./URLdata.json"
+altJSON="/tmp/URLdata.json"
 countFails=0
 certFailCounter=0
 declare -a testURLs=()
 declare -a certURLs=()
 declare -a expIssuer=()
 declare -a expSubject=()
-declare -a expIssuerName=()
+declare -a expIssuerName=()     # used for wildcard matching
 
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
-     altJSONtemp="$altJSON/URLdata.json"
+     if [[ -z $localJSONtemp ]]; then
+          localJSON+=$localJSONtemp
+     fi
      # try to use the local JSON first
      if [[ -f $localJSON ]]; then
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
@@ -102,8 +105,8 @@ function getLocalJSON {
                getJSON 1
           fi
      # if local JSON isn't found, use alternate
-     elif [[ -f "$altJSONtemp" ]]; then
-          localJSON=$altJSONtemp
+     elif [[ -f "$altJSON" ]]; then
+          localJSON=$altJSON
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
                lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
                logger "Using alternate JSON file ($localJSON) from $lastWrite"
@@ -118,13 +121,13 @@ function getLocalJSON {
                getJSON 1
           # alternate not found but directory is writable, download fresh copy from github to alternate location
           elif [[ -w $altJSON ]]; then
-               localJSON=$altJSONtemp
+               localJSON=$altJSON
                getJSON 1
           # else exit the script with error
           else
                logger "Unable to write to either local or alternate JSON files:"
                logger "$localJSON"
-               logger "$altJSONtemp"
+               logger "$altJSON"
                exit 1
           fi
      fi
@@ -187,9 +190,8 @@ function getJSON {
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
 function certTest {
      logger "-- Testing Certificate Validation --"
-     numEntries=${#certURLs[@]}
      declare -a failURLs=()
-     for (( i=0; i<numEntries; i++ )); do
+     for i in "${!certURLs[@]}"; do
           cleanURL=${certURLs[i]}
           s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
           PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
@@ -212,7 +214,7 @@ function certTest {
           if [[ "$recIssuer" == "${expIssuer[i]}" ]]; then 
                logger "[Certificate issuer validation successful for $cleanURL]"
           else
-               if [[ "$recIssuer" == *"${expIssuer[i]}"* ]]; then
+               if [[ "$recIssuer" == *"${expIssuerName[i]}"* ]]; then
                     logger "Please note this was not an exact match, which is expected with big infrastructure."
                     logger "Issuer that was returned: [$recIssuer]"
                     logger "Issuer that was expected: [${expIssuer[i]}]"
