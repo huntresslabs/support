@@ -12,16 +12,16 @@
 # So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
-
-# --> this section marker is for internal use 
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 23, 2026"
-DebugLog="huntress_network_test.log"
-
-# If you want to force the JSON file location and never use the working directory, uncomment and change localJSONtemp to your desired directory. 
+# If you want to change the JSON file location, uncomment and change one localJSONtemp variable below to your desired directory. 
 # The location must be writable for the user who is running the script!
 #     Examples / Suggested locations:
 # localJSONtemp="/var/tmp/"
 # localJSONtemp="/tmp/"
+
+
+# --> this section marker is for internal use 
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 23, 2026"
+DebugLog="huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
 dd=$(date "+%Y-%m-%d  %H:%M:%S")
@@ -91,7 +91,7 @@ declare -a expIssuerName=()     # used for wildcard matching
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
      if [[ -z $localJSONtemp ]]; then
-          localJSON+=$localJSONtemp
+          localJSON=$localJSONtemp+"URLdata.json"
      fi
      # try to use the local JSON first
      if [[ -f $localJSON ]]; then
@@ -120,7 +120,7 @@ function getLocalJSON {
           if [[ -w "./" ]]; then
                getJSON 1
           # alternate not found but directory is writable, download fresh copy from github to alternate location
-          elif [[ -w $altJSON ]]; then
+          elif [[ -w "/tmp/" ]]; then
                localJSON=$altJSON
                getJSON 1
           # else exit the script with error
@@ -198,6 +198,9 @@ function certTest {
           recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
           recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
+          if [[ -z $recSubject || -z $recSubject ]]; then
+               logger "WARNING: Unable to retrieve certificate data! Exiting."
+          fi
           if [[ "$recSubject" == "${expSubject[i]}" ]]; then
                logger "[Certificate subject validation successful for $cleanURL]"
           else
