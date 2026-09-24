@@ -11,13 +11,11 @@
 # So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
-# If you want to change the JSON file location, uncomment and change one localJSONtemp variable below to your desired directory. 
+# If you want to change the JSON file location, uncomment and change one localJSONOverride variable below to your desired directory. 
 # The location must be writable for the user who is running the script!
-#     Examples / Suggested locations:
-# localJSONtemp="/var/tmp/"
-# localJSONtemp="/tmp/"
-#
-# It's recommended to not execute this script in the root directory!
+#     Suggested locations:
+# localJSONOverride="/var/root/"
+# localJSONOverride="/root/"
 
 # --> this section marker is for internal use 
 latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 24, 2026"
@@ -29,6 +27,15 @@ logger() {
     echo "$*";
     echo "$dd -- $*" >> $DebugLog;
 }
+
+# captures script exit and removes temp folder if it was created
+function trapFunction {
+     if [[ "$tempDIRCreated" ]]; then
+          rm -rf "$localJSONOverrideDIR"
+          logger "Cleaning up $localJSONOverrideDIR..."
+     fi
+}
+trap trapFunction EXIT
 
 logger "-----------------------------------------------------------------------------"
 logger $latestUpdate
@@ -92,8 +99,8 @@ declare -a expIssuerName=()          # used for wildcard matching
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
      # alternate file location override
-     if ! [[ -z "$localJSONtemp" ]]; then
-          localJSON="${localJSONtemp}URLdata.json"
+     if ! [[ -z "$localJSONOverride" ]]; then
+          localJSON="${localJSONOverride}URLdata.json"
      fi
 
      # Symbolic links could potentially give a user limited access to a directory they normally can't access.
@@ -300,10 +307,29 @@ function certFail {
     logger "------------------------------------------------------------------------------------------------------------------------------"
 }
 
-if [[ $(pwd) = "/" ]]; then 
-     logger "Running from root directory is not recommended! Using /var/tmp/ for storing github data."
-     localJSONtemp="/var/tmp/"
+# Creates a temp directory if the file storage location is unsafe 
+function useTempDIR {
+     logger "Caution: Running from root directory is not recommended, using temporary directory"
+     localJSONOverrideDIR=$(mktemp -d "${TMPDIR:-/var/tmp}/huntress.XXXXXX") || {
+          logger "WARNING: Unable to create a private temporary directory in /var/tmp/!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     }
+     tempDIRCreated=true
+     logger "Successfully created $localJSONOverrideDIR directory!"
+     # ensure temp directory is only writable by admins
+     chmod 700 "$localJSONOverrideDIR"
+     localJSONOverride="$localJSONOverrideDIR/"
+}
+
+# if the script is ran from the root directory and there isn't a local override, use a temp directory
+if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then 
+     useTempDIR
+# if the override is the root directory, use a temp directory
+elif [[ "$localJSONOverride" == "/" ]]; then
+     useTempDIR
 fi
+
 checkDependency
 getLocalJSON
 simpleTest
