@@ -96,6 +96,18 @@ function getLocalJSON {
           localJSON="${localJSONtemp}URLdata.json"
      fi
 
+     # Symbolic links could potentially give a user limited access to a directory they normally can't access.
+     # The script will exit if it can't find a non-symlink file.
+     if [ -L "$localJSON" ]; then
+          if [ -L "$altJSON" ]; then
+               logger "WARNING: Both JSON files are symbolic links. This is not recommended for security reasons. Exiting!"
+               exit 1
+          else
+               localJSON=$altJSON
+               logger "Local JSON is a symbolic link, using alternate location $altJSON."
+          fi
+     fi
+
      # look for local JSON file
      if [[ -f "$localJSON" ]]; then
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
@@ -144,7 +156,7 @@ function getJSON {
 
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
      if $downloadFromGithub; then
-          curl -fsSL --tlsv1.2 -o $localJSON $gitURL
+          curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"
           if [ $? -ne 0 ]; then
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
@@ -197,11 +209,16 @@ function certTest {
      declare -a failURLs=()
      for i in "${!certURLs[@]}"; do
           cleanURL=${certURLs[i]}
-          # there is no cross-platform timeout command, so use "timeout" if found (Linux) or perl otherwise (macOS typically)
+          # there is no cross-platform timeout command, so attempt to use timeout, perl, or gtimeout before defaulting to no timeout (with warning)
           if command -v timeout >/dev/null 2>&1; then
                s_client=$(timeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
-          else
+          elif command -v perl >/dev/null 2>&1; then
                s_client=$(perl -e 'alarm 5; exec @ARGV' openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+          elif command -v gtimeout >/dev/null 2>&1; then
+               s_client=$(gtimeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+          else
+               logger "Warning: Unable to find an appropriate 'timeout' library. Using openssl without a timer, it's rare but possible for this to hang!"
+               s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
           fi
 
           PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
@@ -209,7 +226,7 @@ function certTest {
           recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
           # abort install if certificates can't be retrieved
-          if [[ -z $recSubject || -z $recSubject ]]; then
+          if [[ -z $recSubject || -z $recIssuer ]]; then
                logger "WARNING: Unable to retrieve certificate data! Exiting."
                exit 1
           fi
