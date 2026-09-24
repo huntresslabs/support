@@ -7,12 +7,13 @@
 # dependencies that Huntress uses in this script, primarily curl, jq, openssl, and nc.
 # https://support.huntress.io/hc/en-us/articles/4410699983891-Supported-Operating-Systems-System-Requirements-Compatibility
 #
-# If the file URLdata.json is found and not more than 2 weeks old, use that file, otherwise the script downloads from github.
-# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
+# If the file URLdata.json is found, last modified time not more than 2 weeks old, and not located in the root folder ./ -> use that file, 
+# otherwise the script downloads from github. 
+# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same non-root (./) directory as the script.
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
 # If you want to change the JSON file location, uncomment and change one localJSONOverride variable below to your desired directory. 
-# The location must be writable for the user who is running the script!
+# The directory must be writable for the user who is running the script, and directory must not be root ./  
 #     Suggested locations:
 # localJSONOverride="/var/root/"
 # localJSONOverride="/root/"
@@ -30,7 +31,7 @@ logger() {
 
 # captures script exit and removes temp folder if it was created
 function trapFunction {
-     if [[ "$tempDIRCreated" ]]; then
+     if [ "$tempDIRCreated" = "true" ]; then
           rm -rf "$localJSONOverrideDIR"
           logger "Cleaning up $localJSONOverrideDIR..."
      fi
@@ -315,6 +316,11 @@ function useTempDIR {
           logger "WARNING: No safe place to store JSON file found, exiting!"
           exit 1
      }
+     if ! [[ -d $localJSONOverrideDIR ]]; then
+          logger "WARNING: Unable to create temporary directory!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     fi
      tempDIRCreated=true
      logger "Successfully created $localJSONOverrideDIR directory!"
      # ensure temp directory is only writable by admins
@@ -323,7 +329,7 @@ function useTempDIR {
 }
 
 # if the script is ran from the root directory and there isn't a local override, use a temp directory
-if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then 
+if [[ "$scriptDIR" == "/" && ! (-z "$localJSONOverride") ]]; then 
      useTempDIR
 # if the override is the root directory, use a temp directory
 elif [[ "$localJSONOverride" == "/" ]]; then
