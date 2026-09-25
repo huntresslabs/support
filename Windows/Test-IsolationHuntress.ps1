@@ -16,7 +16,14 @@ Write-Output "------------------------------------------------------------------
 
 # This script is compatible with all versions of Windows that Huntress Host Isolation supports.
 if ( [System.Environment]::OSVersion.Version.Major -lt 6) {
-    Write-Output "Machine is not supported. Windows Filtering Platform only exists on kernel 6 and higher."
+    Write-Output "Machine is not supported. Windows Filtering Platform only exists on kernel 6 and higher. Exiting..."
+    exit 1
+}
+
+$user    = [Security.Principal.WindowsIdentity]::GetCurrent();
+$isAdmin = (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+if (! $isAdmin) {
+    Write-Output "This script must be run as Administrator! Exiting..."
     exit 1
 }
 
@@ -38,18 +45,39 @@ function prettyPrintMDE {
     }
 }
 
+function cleanupTempFile {
+    param ( [string]$out )
+
+    if (Test-Path $tempDIR) {
+        Remove-Item -Path $tempDIR -Force -Recurse
+    }
+}
+
+
 # Store current WFP rules in a temp file
-$out = "$env:TEMP\wfp_filters.xml"
+$tempDIR = "$env:TEMP\Huntress.$((Get-Date).Second.ToString())"
+New-Item -Path $tempDIR -ItemType "directory" | Out-Null
+if (! (Test-Path $tempDIR)) {
+    Write-Output "Unable to create temporary directory in $env:TEMP  Exiting"
+    exit 1
+}
+
+$out = "$tempDIR\wfp_filters.xml"
 netsh wfp show filters file=$out | Out-Null
 [xml]$wfp = Get-Content $out
 $allFilters = $wfp.wfpdiag.filters.item
+# If the filters variable is null or the wfp_filters file wasn't created, exit
+if ($null -eq $allFilters -or ! (Test-Path $out) ) {
+    Write-Output "Unable to retrieve data from netsh! Exiting..."
+    exit 1
+}
 
 # Look for Huntress WFP rules
 $HuntressFilters = New-Object System.Collections.ArrayList 
 Write-Output "Looking for Huntress rules in WFP..."
 foreach ($filter in $allFilters) {
     # WFP rules are left in place but in an inactive state, so it's necessary to filter out disabled rules
-    if ($filter.displayData.name -match 'Huntress'-and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_DISABLED' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
+    if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_DISABLED' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
         $filterToAdd = New-Object PSObject -Property @{
             Name = $filter.displayData.name
             Action = $filter.action.type
@@ -67,7 +95,7 @@ Write-Output "Looking for 3rd party WFP blocking rules (best effort)..."
 $blockedFilters = New-Object System.Collections.ArrayList 
 foreach ($filter in $allFilters) {
     # if it's a blocking rule, not named Huntress, and it's not a disabled rule -> add to array
-    if ($filter.action.type -eq "BLOCK" -and $filter.displayData.name -notcontains 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_DISABLED') {
+    if ($filter.action.type -eq "BLOCK" -and $filter.action.type -eq "FWP_ACTION_BLOCK" -and $filter.displayData.name -notmatch 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_DISABLED') {
         echo "'$($filter.displayData.name)' -> filter"
         $filterToAdd = New-Object PSObject -Property @{
             Name = $filter.displayData.name
@@ -78,9 +106,6 @@ foreach ($filter in $allFilters) {
         [void]$blockedFilters.Add($filterToAdd)
     }
 }
-$total3rdPartyBlocks = @($blockedFilters).Count
-
-
 
 # Look for MDE isolation, which is easiest found by looking in event logs
 Write-Output "Looking for Microsoft Defender for Endpoint (MDE) isolation events..."
@@ -98,6 +123,10 @@ try {
             $total3rdPartyBlocks++
             # Event ID 60 indicates "failed to run command" so we ignore those. ID 59 indicates starting command, while 71 indicates the command succeeded
             if ($null -eq $newestEvent -or $newestEvent.TimeCreated -gt $loggedEvent.TimeCreated -or $newestEvent.EventId -eq 60) {
+                $newestEvent = $loggedEvent
+            }
+            # WEL uses seconds to log events, since that's not nearly granular enough use RecordId to resolve time conflicts
+            if ($newestEvent.TimeCreated -eq $loggedEvent.TimeCreated -and $newestEvent.RecordId -gt $loggedEvent.RecordId) {
                 $newestEvent = $loggedEvent
             }
         }
@@ -127,7 +156,7 @@ if ($numHuntressFilters -gt 0) {
 
 if ($blockedFilters.Count -gt 0) {
     $blockedFilters | Format-List
-    Write-Output "3rd party WFP : $numWFPFilters potential WFP blocking rules found from 3rd party!"
+    Write-Output "3rd party WFP : $($blockedFilters.Count) potential WFP blocking rules found from 3rd party!"
 } else {
     Write-Output "3rd party WFP : no WFP blocking rules found on this machine. This isn't conclusive, simply a best effort."
 }
@@ -143,3 +172,4 @@ if ($eventsFromMDE.Count -gt 0) {
 } else {
     Write-Output "MDE           : no isolation events found in the event logs"
 }
+cleanupTempFile
