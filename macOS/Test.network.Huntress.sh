@@ -329,7 +329,7 @@ function useTempDIR {
 }
 
 # if the script is ran from the root directory and there isn't a local override, use a temp directory
-if [[ "$scriptDIR" == "/" && ! (-z "$localJSONOverride") ]]; then 
+if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then
      useTempDIR
 # if the override is the root directory, use a temp directory
 elif [[ "$localJSONOverride" == "/" ]]; then
