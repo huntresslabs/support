@@ -1,26 +1,25 @@
 #!/bin/bash
 
-# Tests a number of ways Huntress agents communicate with the Huntress portal, essentially a TCP port 443 connection outbound.
-# This effectively tests connectivity as well as checks for certificate interception/inspection services which will prevent the
-# Huntress agent from communicating with the Huntress portal.
+# Tests a number of ways Huntress agents communicate with the Huntress portal, essentially a TCP port 443 connection outbound and checks 
+# for certificate interception/inspection services which will prevent the Huntress agent from communicating with the Huntress portal.
 #
 # This script is designed for use in all macOS and Linux distros/versions that Huntress supports, however some distros may be missing
 # dependencies that Huntress uses in this script, primarily curl, jq, openssl, and nc.
 # https://support.huntress.io/hc/en-us/articles/4410699983891-Supported-Operating-Systems-System-Requirements-Compatibility
 #
-# If the file URLdata.json is found and not more than 2 weeks old, use that file, otherwise the script downloads from github.
-# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same directory as the script.
+# If the file URLdata.json is found, last modified time not more than 2 weeks old, and not located in the root folder ./ -> use that file, 
+# otherwise the script downloads from github. 
+# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same non-root (./) directory as the script.
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
-# If you want to change the JSON file location, uncomment and change one localJSONtemp variable below to your desired directory. 
-# The location must be writable for the user who is running the script!
-#     Examples / Suggested locations:
-# localJSONtemp="/var/tmp/"
-# localJSONtemp="/tmp/"
-
+# If you want to change the JSON file location, uncomment and change one localJSONOverride variable below to your desired directory. 
+# The directory must be writable for the user who is running the script, and directory must not be root ./  
+#     Suggested locations:
+# localJSONOverride="/var/root/"
+# localJSONOverride="/root/"
 
 # --> this section marker is for internal use 
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 23, 2026"
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 24, 2026"
 DebugLog="huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
@@ -29,6 +28,15 @@ logger() {
     echo "$*";
     echo "$dd -- $*" >> $DebugLog;
 }
+
+# captures script exit and removes temp folder if it was created
+function trapFunction {
+     if [ "$tempDIRCreated" = "true" ]; then
+          rm -rf "$localJSONOverrideDIR"
+          logger "Cleaning up $localJSONOverrideDIR..."
+     fi
+}
+trap trapFunction EXIT
 
 logger "-----------------------------------------------------------------------------"
 logger $latestUpdate
@@ -73,36 +81,50 @@ function checkDependency {
 # <--------------------------------------------------------------------------------------
 
 # How old (in days) the local JSON can be before it's ignored. 14 days is suggested.
-gracePeriodForJSON=14
 
-# Setup some global variables
+# Setup some variables
 gitURL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
-localJSON="./URLdata.json"
-altJSON="/tmp/URLdata.json"
-countFails=0
-certFailCounter=0
-declare -a testURLs=()
-declare -a certURLs=()
-declare -a expIssuer=()
-declare -a expSubject=()
-declare -a expIssuerName=()     # used for wildcard matching
+scriptDIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+localJSON="$scriptDIR/URLdata.json"  # from the same working directory as the script
+altJSON="/tmp/URLdata.json"          # alternate location if current working directory is inaccessible or is missing the JSON file
+countFails=0                         # total number of network tests that failed (including cert fails)
+certFailCounter=0                    # total number of certificate tests that failed
+gracePeriodForJSON=14                # number of days old the local JSON can be before it's ignored
+declare -a testURLs=()               # the URLs to test TCP connectivity
+declare -a certURLs=()               # the URLs to test certificate interception
+declare -a expIssuer=()              # the expected issuer (owner of the server certificate)
+declare -a expSubject=()             # the expected subject (leaf certificate)
+declare -a expIssuerName=()          # used for wildcard matching
 
 
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
-     if ! [[ -z $localJSONtemp ]]; then
-          localJSON="${localJSONtemp}URLdata.json"
+     # alternate file location override
+     if ! [[ -z "$localJSONOverride" ]]; then
+          localJSON="${localJSONOverride}URLdata.json"
      fi
-     # try to use the local JSON first
-     if [[ -f $localJSON ]]; then
+
+     # Symbolic links could potentially give a user limited access to a directory they normally can't access.
+     # The script will exit if it can't find a non-symlink file.
+     if [ -L "$localJSON" ]; then
+          if [ -L "$altJSON" ]; then
+               logger "WARNING: Both JSON files are symbolic links. This is not recommended for security reasons. Exiting!"
+               exit 1
+          else
+               localJSON=$altJSON
+               logger "Local JSON is a symbolic link, using alternate location $altJSON."
+          fi
+     fi
+
+     # look for local JSON file
+     if [[ -f "$localJSON" ]]; then
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
                lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
-               logger "Using local URLdata.json from $lastWrite"
-               logger 
-               getJSON 0
+               logger "Using $localJSON from $lastWrite"
+               getJSON false
           else
                logger "Local JSON file is stale, downloading new version from github"
-               getJSON 1
+               getJSON true
           fi
      # if local JSON isn't found, use alternate
      elif [[ -f "$altJSON" ]]; then
@@ -110,19 +132,22 @@ function getLocalJSON {
           if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
                lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
                logger "Using alternate JSON file ($localJSON) from $lastWrite"
-               getJSON 0
+               getJSON false
           else
                logger "Alternate JSON file ($localJSON) too old to safely use, attempting to retrieve from github"
-               getJSON 1
+               getJSON true
           fi
+     # no existing files found, look for a writable directory
      else 
-          # local file not found but directory is writable, download fresh copy from github 
-          if [[ -w "./" ]]; then
-               getJSON 1
-          # alternate not found but directory is writable, download fresh copy from github to alternate location
+          # script directory is writable, download fresh copy from github 
+          if [[ -w "$scriptDIR" ]]; then
+               logger "JSON file not found, using $scriptDIR"
+               getJSON true
+          # alternate directory is writable, download fresh copy from github to alternate location
           elif [[ -w "/tmp/" ]]; then
+               logger "JSON file not found, script directory not writable, using $altJSON"
                localJSON=$altJSON
-               getJSON 1
+               getJSON true
           # else exit the script with error
           else
                logger "Unable to write to either local or alternate JSON files:"
@@ -134,13 +159,12 @@ function getLocalJSON {
 }
 
 # Download a JSON from github to a local file (represented by $localJSON), then process that file into arrays.
-# Pass a [int]1 to download a fresh copy of the JSON data, or [int]0 to use a local copy
 function getJSON {
      local downloadFromGithub="${1:?Error: downloadFromGithub variable is required.}"
 
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
-     if [ $downloadFromGithub -eq 1 ]; then
-          curl -fsSL --tlsv1.2 -o $localJSON $gitURL
+     if $downloadFromGithub; then
+          curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"
           if [ $? -ne 0 ]; then
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
@@ -150,7 +174,7 @@ function getJSON {
                logger
           fi
      fi
-     if ! [ -f $localJSON ]; then
+     if ! [ -f "$localJSON" ]; then
           logger "Unable to find $localJSON"
           exit 1
      fi
@@ -193,15 +217,28 @@ function certTest {
      declare -a failURLs=()
      for i in "${!certURLs[@]}"; do
           cleanURL=${certURLs[i]}
-          s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
+          # there is no cross-platform timeout command, so attempt to use timeout, perl, or gtimeout before defaulting to no timeout (with warning)
+          if command -v timeout >/dev/null 2>&1; then
+               s_client=$(timeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+          elif command -v perl >/dev/null 2>&1; then
+               s_client=$(perl -e 'alarm 5; exec @ARGV' openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+          elif command -v gtimeout >/dev/null 2>&1; then
+               s_client=$(gtimeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+          else
+               logger "Warning: Unable to find an appropriate 'timeout' library. Using openssl without a timer, it's rare but possible for this to hang!"
+               s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
+          fi
+
           PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
           recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
           recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
+          # abort install if certificates can't be retrieved
           if [[ -z $recSubject || -z $recIssuer ]]; then
                logger "WARNING: Unable to retrieve certificate data! Exiting."
                exit 1
           fi
+
           if [[ "$recSubject" == "${expSubject[i]}" ]]; then
                logger "[Certificate subject validation successful for $cleanURL]"
           else
@@ -233,26 +270,13 @@ function certTest {
                fi
           fi
      done
+     # list every cert failure so the appropriate DPI system can be adjusted
      if [[ "$certFailCounter" > 0 ]]; then
           for i in "${!failURLs[@]}"; do
                certFail "${failURLs[i]}"
           done
      fi
      logger ""
-}
-
-# Helper function to print lengthy error/instructional message
-function certFail {
-    # If $1 parameter is missing, prints the message and exits the script
-    local cleanURL="${1:?Error: cleanURL variable is required.}"
-    logger "------------------------------------------------------------------------------------------------------------------------------"
-    logger "The Subject/Issuer text above usually identifies if this is a DPI/cert interception issue, or a cert chain issue."
-    logger "* If the returned SUBJECT does not contain 'Huntress' or 'Microsoft' in the text this is likely a DPI/cert interception issue."
-    logger "      You'll need to add an exclusion for the certificate for this URL in your DPI/cert interception service: $cleanURL"
-    logger "* If the returned ISSUER does not contain 'DigiCert', 'Google', or 'Microsoft', this is likely a  DPI/cert interception issue."
-    logger "      You'll need to add an exclusion for the certificate for this URL in your DPI/cert interception service: $cleanURL"
-    logger "* Otherwise this is likely a missing certificate chain. Check for pending OS updates, reboot, and try again."
-    logger "------------------------------------------------------------------------------------------------------------------------------"
 }
 
 # test outgoing port 443 connectivity to Huntress URLs
@@ -270,6 +294,47 @@ function tcpTest {
      logger ""
 }
 
+# Helper function to print lengthy error/instructional message
+function certFail {
+    # If $1 parameter is missing, prints the message and exits the script
+    local cleanURL="${1:?Error: cleanURL variable is required.}"
+    logger "------------------------------------------------------------------------------------------------------------------------------"
+    logger "The Subject/Issuer text above usually identifies if this is a DPI/cert interception issue, or a cert chain issue."
+    logger "* If the returned SUBJECT does not contain 'Huntress' or 'Microsoft' in the text this is likely a DPI/cert interception issue."
+    logger "      You'll need to add an exclusion for the certificate for this URL in your DPI/cert interception service: $cleanURL"
+    logger "* If the returned ISSUER does not contain 'DigiCert', 'Google', or 'Microsoft', this is likely a  DPI/cert interception issue."
+    logger "      You'll need to add an exclusion for the certificate for this URL in your DPI/cert interception service: $cleanURL"
+    logger "* Otherwise this is likely a missing certificate chain. Check for pending OS updates, reboot, and try again."
+    logger "------------------------------------------------------------------------------------------------------------------------------"
+}
+
+# Creates a temp directory if the file storage location is unsafe 
+function useTempDIR {
+     logger "Caution: Running from root directory is not recommended, using temporary directory"
+     localJSONOverrideDIR=$(mktemp -d "/tmp/huntress.XXXXXX") || {
+          logger "WARNING: Unable to create a private temporary directory in /tmp/!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     }
+     if ! [[ -d $localJSONOverrideDIR ]]; then
+          logger "WARNING: Unable to create temporary directory!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     fi
+     tempDIRCreated=true
+     logger "Successfully created $localJSONOverrideDIR directory!"
+     # ensure temp directory is only writable by admins
+     chmod 700 "$localJSONOverrideDIR"
+     localJSONOverride="$localJSONOverrideDIR/"
+}
+
+# if the script is ran from the root directory and there isn't a local override, use a temp directory
+if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then
+     useTempDIR
+# if the override is the root directory, use a temp directory
+elif [[ "$localJSONOverride" == "/" ]]; then
+     useTempDIR
+fi
 
 checkDependency
 getLocalJSON
