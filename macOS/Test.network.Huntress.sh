@@ -311,10 +311,11 @@ function certFail {
 # Creates a temp directory if the file storage location is unsafe 
 function useTempDIR {
      logger "Caution: Running from root directory is not recommended, using temporary directory"
-     localJSONOverrideDIR=$(mktemp -d "${TMPDIR:-/var/tmp}/huntress.XXXXXX") || {
-          logger "WARNING: Unable to create a private temporary directory in /var/tmp/!"
+     localJSONOverrideDIR=$(mktemp -d "/tmp/huntress.XXXXXX") || {
+          logger "WARNING: Unable to create a private temporary directory in /tmp/!"
           logger "WARNING: No safe place to store JSON file found, exiting!"
           exit 1
+     }
      }
      if ! [[ -d $localJSONOverrideDIR ]]; then
           logger "WARNING: Unable to create temporary directory!"
