@@ -69,6 +69,7 @@ $allFilters = $wfp.wfpdiag.filters.item
 # If the filters variable is null or the wfp_filters file wasn't created, exit
 if ($null -eq $allFilters -or ! (Test-Path $out) ) {
     Write-Output "Unable to retrieve data from netsh! Exiting..."
+    cleanupTempFile
     exit 1
 }
 
@@ -126,7 +127,7 @@ try {
                 $newestEvent = $loggedEvent
             }
             # WEL uses seconds to log events, since that's not nearly granular enough use RecordId to resolve time conflicts
-            if ($newestEvent.TimeCreated -eq $loggedEvent.TimeCreated -and $newestEvent.RecordId -gt $loggedEvent.RecordId) {
+            if ($newestEvent.TimeCreated -eq $loggedEvent.TimeCreated -and $newestEvent.RecordId -lt $loggedEvent.RecordId) {
                 $newestEvent = $loggedEvent
             }
         }
