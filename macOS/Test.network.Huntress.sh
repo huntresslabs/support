@@ -316,7 +316,6 @@ function useTempDIR {
           logger "WARNING: No safe place to store JSON file found, exiting!"
           exit 1
      }
-     }
      if ! [[ -d $localJSONOverrideDIR ]]; then
           logger "WARNING: Unable to create temporary directory!"
           logger "WARNING: No safe place to store JSON file found, exiting!"
