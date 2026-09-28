@@ -164,7 +164,7 @@ function getJSON {
 
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
      if $downloadFromGithub; then
-          if [ ! "$(curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL")" ]; then
+          if ! curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"; then
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
                exit 1
