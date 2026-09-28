@@ -13,13 +13,13 @@
 #    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
 
 # If you want to change the JSON file location, uncomment and change one localJSONOverride variable below to your desired directory. 
-# The directory must be writable for the user who is running the script, and directory must not be root ./  
+# The directory must be writable for the user who is running the script, and directory must not be root i.e.: ./  
 #     Suggested locations:
 # localJSONOverride="/var/root/"
 # localJSONOverride="/root/"
 
 # --> this section marker is for internal use 
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 24, 2026"
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 28, 2026"
 DebugLog="huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
@@ -39,7 +39,7 @@ function trapFunction {
 trap trapFunction EXIT
 
 logger "-----------------------------------------------------------------------------"
-logger $latestUpdate
+logger "$latestUpdate"
 logger "-----------------------------------------------------------------------------"
 
 # Simple test just to establish working DNS and basic internet connectivity
@@ -62,7 +62,7 @@ function checkDependency {
           if [ -z "$tool" ]; then
                logger "Error retrieving install status of curl, jq, openssl, or nc! $tool"
           else
-               if ! command -v $tool &> /dev/null; then
+               if ! command -v "$tool" &> /dev/null; then
                     logger "Error: $tool is not installed and is required to run this script! You may need to"
                     logger "install this using your package manager. Here are some suggestions:"
                     logger "macOS:               brew install $tool"
@@ -164,8 +164,7 @@ function getJSON {
 
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
      if $downloadFromGithub; then
-          curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"
-          if [ $? -ne 0 ]; then
+          if [ ! "$(curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL")" ]; then
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
                exit 1
@@ -182,17 +181,19 @@ function getJSON {
      # Splitting the JSON file into several arrays
      while IFS= read -r item; do
           [ -z "$item" ] && continue
-          testURLs+=($(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||'))
+          item=$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+          testURLs+=("$item")
      done < <(cat "$localJSON" | jq -r '.array1[] | select(length > 0)')
      while IFS= read -r item; do
           [ -z "$item" ] && continue
-          certURLs+=($(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||'))
+          item=$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+          certURLs+=("$item")
      done < <(cat "$localJSON" | jq -r '.array2[] | select(length > 0)')
      # even array indices are Subjects, odd are Issuer. 
      count=0    
      while IFS= read -r item; do
           [ -z "$item" ] && continue
-          if (( $count % 2 == 0 )); then
+          if (( count % 2 == 0 )); then
                expSubject+=("$(echo "$item" | xargs)")
           else
                expIssuer+=("$(echo "$item" | xargs)")
@@ -226,7 +227,7 @@ function certTest {
                s_client=$(gtimeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
           else
                logger "Warning: Unable to find an appropriate 'timeout' library. Using openssl without a timer, it's rare but possible for this to hang!"
-               s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null < /dev/null )
+               s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2>/dev/null )
           fi
 
           PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
@@ -244,7 +245,7 @@ function certTest {
           else
                ((certFailCounter++))
                ((countFails++))
-               failURLs+=($cleanURL)
+               failURLs+=("$cleanURL")
                logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
                logger "Subject that was returned: [$recSubject]"
                logger "Subject that was expected: [${expSubject[i]}]"
@@ -262,7 +263,7 @@ function certTest {
                else
                     ((certFailCounter++))
                     ((countFails++))
-                    failURLs+=($cleanURL)
+                    failURLs+=("$cleanURL")
                     logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
                     logger "Issuer that was returned: [$recIssuer]"
                     logger "Issuer that was expected: [${expIssuer[i]}]"
@@ -271,7 +272,7 @@ function certTest {
           fi
      done
      # list every cert failure so the appropriate DPI system can be adjusted
-     if [[ "$certFailCounter" > 0 ]]; then
+     if [[ "$certFailCounter" -gt 0 ]]; then
           for i in "${!failURLs[@]}"; do
                certFail "${failURLs[i]}"
           done
@@ -329,7 +330,7 @@ function useTempDIR {
 }
 
 # if the script is ran from the root directory and there isn't a local override, use a temp directory
-if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then
+if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then 
      useTempDIR
 # if the override is the root directory, use a temp directory
 elif [[ "$localJSONOverride" == "/" ]]; then
