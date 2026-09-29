@@ -7,19 +7,18 @@
 # dependencies that Huntress uses in this script, primarily curl, jq, openssl, and nc.
 # https://support.huntress.io/hc/en-us/articles/4410699983891-Supported-Operating-Systems-System-Requirements-Compatibility
 #
-# If the file URLdata.json is found, last modified time not more than 2 weeks old, and not located in the root folder ./ -> use that file, 
-# otherwise the script downloads from github. 
-# So if your network blocks access to githubusercontent.com you'll need to keep the below file in the same non-root (./) directory as the script.
-#    https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
+# If your network blocks access to githubusercontent.com or if you'd prefer to use a local file, you'll need to download this file and
+# keep it in the same directory as the script:  https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json
+# Restrictions (primarily for test accuracy/security): 
+#   - Script/JSON file must not be in a root directory ./
+#   - Script/JSON file directory must not be writable by non-admins
+#   - Script/JSON file directory must not be a symbolic link
+#   - JSON file must have a last modified time of no more than 2 weeks ago
+#   = If any of the above fail, script will download from github into a temporary directory that will be deleted when script is done.
 
-# If you want to change the JSON file location, uncomment and change one localJSONOverride variable below to your desired directory. 
-# The directory must be writable for the user who is running the script, and directory must not be root i.e.: ./  
-#     Suggested locations:
-# localJSONOverride="/var/root/"
-# localJSONOverride="/root/"
 
 # --> this section marker is for internal use 
-latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 28, 2026"
+latestUpdate="Huntress Network Tester: macOS and Linux Bash, last updated Sept 29, 2026"
 DebugLog="huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
@@ -86,7 +85,6 @@ function checkDependency {
 gitURL='https://raw.githubusercontent.com/huntresslabs/support/refs/heads/main/URLdata.json'
 scriptDIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 localJSON="$scriptDIR/URLdata.json"  # from the same working directory as the script
-altJSON="/tmp/URLdata.json"          # alternate location if current working directory is inaccessible or is missing the JSON file
 countFails=0                         # total number of network tests that failed (including cert fails)
 certFailCounter=0                    # total number of certificate tests that failed
 gracePeriodForJSON=14                # number of days old the local JSON can be before it's ignored
@@ -97,23 +95,45 @@ declare -a expSubject=()             # the expected subject (leaf certificate)
 declare -a expIssuerName=()          # used for wildcard matching
 
 
+# In order to ensure accurate test results, reduce chance of interference by only using admin-writable directories
+# Also looking for sym links, as that's another way users could potentially gain write-access to this data.
+function JSONSecurityChecks {
+     if ! [ -z "$localJSONOverride" ]; then
+          # if the override is the root directory, use a temp directory
+          if [[ "$localJSONOverride" == "/" ]]; then
+               logger "Caution: Running from root directory is not recommended (localJSONOverride), using temporary directory"
+               useTempDIR
+          # If the localJSONOverride variable is set and location is writable by non-admins, use temp directory.
+          elif [ "$(stat -c %a "$localJSONOverride" 2>/dev/null || stat -f %p "$localJSONOverride" | tail -c 4)" = "777" ]; then
+               logger "Warning: JSON (override) directory is writable by non-admins, using a temporary directory instead!"
+               useTempDIR
+          # Symbolic links could potentially give a user limited access to a directory they normally can't access.
+          elif [ -L "$localJSONOverride" ]; then
+               logger "JSON override is a symbolic link, using temporary directory instead."
+               useTempDIR
+          fi
+     else
+          # Symbolic links could potentially give a user limited access to a directory they normally can't access.
+          if [ -L "$localJSON" ]; then
+               logger "Local JSON is a symbolic link, using temporary directory instead."
+               useTempDIR
+          # if the script is ran from the root directory and there isn't a local override, use a temp directory
+          elif [[ "$scriptDIR" == "/" ]]; then 
+               logger "Caution: Running from root directory is not recommended (localJSON), using temporary directory"
+               useTempDIR
+          # if the directory is writable by all users, use temp directory instead
+          elif [ -d "$localJSON" ] && [ "$(stat -c %a "$localJSON" 2>/dev/null || stat -f %p "$localJSON" | tail -c 4)" = "777" ]; then
+               logger "Warning: JSON file directory is writable by non-admins, using a temporary directory instead!"
+               useTempDIR
+          fi
+     fi
+}
+
 # If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
 function getLocalJSON {
-     # alternate file location override
+     # file location override
      if ! [[ -z "$localJSONOverride" ]]; then
           localJSON="${localJSONOverride}URLdata.json"
-     fi
-
-     # Symbolic links could potentially give a user limited access to a directory they normally can't access.
-     # The script will exit if it can't find a non-symlink file.
-     if [ -L "$localJSON" ]; then
-          if [ -L "$altJSON" ]; then
-               logger "WARNING: Both JSON files are symbolic links. This is not recommended for security reasons. Exiting!"
-               exit 1
-          else
-               localJSON=$altJSON
-               logger "Local JSON is a symbolic link, using alternate location $altJSON."
-          fi
      fi
 
      # look for local JSON file
@@ -126,34 +146,17 @@ function getLocalJSON {
                logger "Local JSON file is stale, downloading new version from github"
                getJSON true
           fi
-     # if local JSON isn't found, use alternate
-     elif [[ -f "$altJSON" ]]; then
-          localJSON=$altJSON
-          if [[ $(find "$localJSON" -type f -mtime -"$gracePeriodForJSON" -print) ]]; then
-               lastWrite="$(date -r "$localJSON" '+%Y-%m-%d %H:%M:%S %Z')"
-               logger "Using alternate JSON file ($localJSON) from $lastWrite"
-               getJSON false
-          else
-               logger "Alternate JSON file ($localJSON) too old to safely use, attempting to retrieve from github"
-               getJSON true
-          fi
      # no existing files found, look for a writable directory
      else 
-          # script directory is writable, download fresh copy from github 
+          # script directory is writable, download fresh copy from github
           if [[ -w "$scriptDIR" ]]; then
                logger "JSON file not found, using $scriptDIR"
                getJSON true
-          # alternate directory is writable, download fresh copy from github to alternate location
-          elif [[ -w "/tmp/" ]]; then
-               logger "JSON file not found, script directory not writable, using $altJSON"
-               localJSON=$altJSON
-               getJSON true
-          # else exit the script with error
+          # else use temporary directory
           else
-               logger "Unable to write to either local or alternate JSON files:"
-               logger "$localJSON"
-               logger "$altJSON"
-               exit 1
+               logger "Unable to write to local JSON files, using temporary directory"
+               useTempDIR
+               getJSON true
           fi
      fi
 }
@@ -164,7 +167,7 @@ function getJSON {
 
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
      if $downloadFromGithub; then
-          if ! curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"; then
+          if curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"; then
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
                exit 1
@@ -181,13 +184,11 @@ function getJSON {
      # Splitting the JSON file into several arrays
      while IFS= read -r item; do
           [ -z "$item" ] && continue
-          item=$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-          testURLs+=("$item")
+          testURLs+=("$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')")
      done < <(cat "$localJSON" | jq -r '.array1[] | select(length > 0)')
      while IFS= read -r item; do
           [ -z "$item" ] && continue
-          item=$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-          certURLs+=("$item")
+          certURLs+=("$(printf "%s\n" "$item" | sed -e 's|^[^/]*//||' -e 's|/.*$||')")
      done < <(cat "$localJSON" | jq -r '.array2[] | select(length > 0)')
      # even array indices are Subjects, odd are Issuer. 
      count=0    
@@ -214,70 +215,83 @@ function getJSON {
 
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
 function certTest {
-     logger "-- Testing Certificate Validation --"
-     declare -a failURLs=()
-     for i in "${!certURLs[@]}"; do
-          cleanURL=${certURLs[i]}
-          # there is no cross-platform timeout command, so attempt to use timeout, perl, or gtimeout before defaulting to no timeout (with warning)
-          if command -v timeout >/dev/null 2>&1; then
-               s_client=$(timeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
-          elif command -v perl >/dev/null 2>&1; then
-               s_client=$(perl -e 'alarm 5; exec @ARGV' openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
-          elif command -v gtimeout >/dev/null 2>&1; then
-               s_client=$(gtimeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
-          else
-               logger "Warning: Unable to find an appropriate 'timeout' library. Using openssl without a timer, it's rare but possible for this to hang!"
-               s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2>/dev/null )
-          fi
+    logger "-- Testing Certificate Validation --"
+    declare -a failURLs=()
+    
+    # Placeholder handling of shell index issues
+    if [ -n "$BASH_VERSION" ] && true || false; then
+        index=0
+        iMax="((${#testURLs[@]}-1))"
+    else
+        index=1
+        iMax="${#testURLs[@]}"
+    fi
 
-          PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
-          recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
-          recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
+    for item in "${certURLs[@]}"; do
+        cleanURL="$item"
+        # there is no cross-platform timeout command, so attempt to use timeout, perl, or gtimeout before defaulting to no timeout (with warning)
+        if command -v timeout >/dev/null 2>&1; then
+            s_client=$(timeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+        elif command -v perl >/dev/null 2>&1; then
+            s_client=$(perl -e 'alarm 5; exec @ARGV' openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+        elif command -v gtimeout >/dev/null 2>&1; then
+            s_client=$(gtimeout 5 openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" </dev/null 2>/dev/null)
+        else
+            logger "Warning: Unable to find an appropriate 'timeout' library. Using openssl without a timer, it's rare but possible for this to hang!"
+            s_client=$(printf '\n' | openssl s_client -connect "${cleanURL}:443" -servername "${cleanURL}" 2> /dev/null )
+        fi
 
-          # abort install if certificates can't be retrieved
-          if [[ -z $recSubject || -z $recIssuer ]]; then
-               logger "WARNING: Unable to retrieve certificate data! Exiting."
-               exit 1
-          fi
+        PEM=$(printf '%s\n' "$s_client" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p')
+        recIssuer=$(printf '%s\n' "$s_client" | openssl x509 -noout -issuer -nameopt compat | cut -d'/' -f2- | xargs)
+        recSubject=$(printf '%s\n' "$s_client" | openssl x509 -noout -subject -nameopt compat | cut -d'/' -f2- | xargs)
 
-          if [[ "$recSubject" == "${expSubject[i]}" ]]; then
-               logger "[Certificate subject validation successful for $cleanURL]"
-          else
-               ((certFailCounter++))
-               ((countFails++))
-               failURLs+=("$cleanURL")
-               logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
-               logger "Subject that was returned: [$recSubject]"
-               logger "Subject that was expected: [${expSubject[i]}]"
-               logger "PEM that was received: $PEM"
-          fi
+        # abort install if certificates can't be retrieved
+        if [[ -z "$recSubject" || -z "$recIssuer" ]]; then
+           logger "WARNING: Unable to retrieve certificate data! Exiting."
+           exit 1
+        fi
 
-          # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
-          if [[ "$recIssuer" == "${expIssuer[i]}" ]]; then 
-               logger "[Certificate issuer validation successful for $cleanURL]"
-          else
-               if [[ "$recIssuer" == *"${expIssuerName[i]}"* ]]; then
-                    logger "Please note this was not an exact match, which is expected with big infrastructure."
-                    logger "Issuer that was returned: [$recIssuer]"
-                    logger "Issuer that was expected: [${expIssuer[i]}]"
-               else
-                    ((certFailCounter++))
-                    ((countFails++))
-                    failURLs+=("$cleanURL")
-                    logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
-                    logger "Issuer that was returned: [$recIssuer]"
-                    logger "Issuer that was expected: [${expIssuer[i]}]"
-                    logger "PEM that was received: $PEM"
-               fi
-          fi
-     done
-     # list every cert failure so the appropriate DPI system can be adjusted
-     if [[ "$certFailCounter" -gt 0 ]]; then
-          for i in "${!failURLs[@]}"; do
-               certFail "${failURLs[i]}"
-          done
-     fi
-     logger ""
+        if [[ "$recSubject" == "${expSubject[$index]}" ]]; then
+           logger "[Certificate subject validation successful for $cleanURL]"
+        else
+            ((certFailCounter++))
+            ((countFails++))
+            failURLs+=("$cleanURL")
+            logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
+            logger "Subject that was returned: [$recSubject]"
+            logger "Subject that was expected: [${expSubject[$index]}]"
+            logger "PEM that was received: $PEM"
+        fi
+
+        # Issuer can vary based on the specific server the script reaches. To compensate, we check for exact match then a wildcard match.
+        if [[ "$recIssuer" == "${expIssuer[$index]}" ]]; then 
+            logger "[Certificate issuer validation successful for $cleanURL]"
+        else
+            if [[ "$recIssuer" == *"${expIssuerName[$index]}"* ]]; then
+                logger "Please note this was not an exact match, which is expected with big infrastructure."
+                logger "Issuer that was returned: [$recIssuer]"
+                logger "Issuer that was expected: [${expIssuer[$index]}]"
+            else
+                ((certFailCounter++))
+                ((countFails++))
+                failURLs+=("$cleanURL")
+                logger "[FAILED: Issuer validation. Certificate does not match for [$cleanURL] !]"
+                logger "Issuer that was returned: [$recIssuer]"
+                logger "Issuer that was expected: [${expIssuer[$index]}]"
+                logger "PEM that was received: $PEM"
+            fi
+        fi
+        if [[ "$index" -lt "$iMax" ]]; then
+            ((index++))
+        fi
+    done
+    # list every cert failure so the appropriate DPI system can be adjusted
+    if [[ "$certFailCounter" -gt 0 ]]; then
+        for item in "${failURLs[@]}"; do
+           certFail "$item"
+        done
+    fi
+    logger ""
 }
 
 # test outgoing port 443 connectivity to Huntress URLs
@@ -311,7 +325,6 @@ function certFail {
 
 # Creates a temp directory if the file storage location is unsafe 
 function useTempDIR {
-     logger "Caution: Running from root directory is not recommended, using temporary directory"
      localJSONOverrideDIR=$(mktemp -d "/tmp/huntress.XXXXXX") || {
           logger "WARNING: Unable to create a private temporary directory in /tmp/!"
           logger "WARNING: No safe place to store JSON file found, exiting!"
@@ -329,16 +342,10 @@ function useTempDIR {
      localJSONOverride="$localJSONOverrideDIR/"
 }
 
-# if the script is ran from the root directory and there isn't a local override, use a temp directory
-if [[ "$scriptDIR" == "/" && -z "$localJSONOverride" ]]; then 
-     useTempDIR
-# if the override is the root directory, use a temp directory
-elif [[ "$localJSONOverride" == "/" ]]; then
-     useTempDIR
-fi
-
 checkDependency
+JSONSecurityChecks
 getLocalJSON
+
 simpleTest
 tcpTest
 certTest
