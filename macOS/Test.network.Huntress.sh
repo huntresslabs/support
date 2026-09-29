@@ -108,11 +108,12 @@ function JSONSecurityChecks {
                logger "Warning: JSON (override) directory is writable by non-admins, using a temporary directory instead!"
                useTempDIR
           # Symbolic links could potentially give a user limited access to a directory they normally can't access.
-          elif [ -L "$localJSONOverride" ]; then
+          elif [ -L "$localJSONOverride" || -L "$localJSONOverride/URLdata.json" ]; then
                logger "JSON override is a symbolic link, using temporary directory instead."
                useTempDIR
           fi
      else
+          localPerm="$(stat -c %a "$scriptDIR" 2>/dev/null || stat -f %p "$scriptDIR" | tail -c 1)"
           # Symbolic links could potentially give a user limited access to a directory they normally can't access.
           if [ -L "$localJSON" ]; then
                logger "Local JSON is a symbolic link, using temporary directory instead."
@@ -122,14 +123,14 @@ function JSONSecurityChecks {
                logger "Caution: Running from root directory is not recommended (localJSON), using temporary directory"
                useTempDIR
           # if the directory is writable by all users, use temp directory instead
-          elif [ -d "$localJSON" ] && [ "$(stat -c %a "$localJSON" 2>/dev/null || stat -f %p "$localJSON" | tail -c 4)" = "777" ]; then
+          elif [ "$localPerm" = "7" || "$localPerm" = "6" ]; then
                logger "Warning: JSON file directory is writable by non-admins, using a temporary directory instead!"
                useTempDIR
           fi
      fi
 }
 
-# If the local JSON file exists and was modified less than 14 days ago, skip downloading from github
+# If the local JSON file meets the requirements, skip downloading from github
 function getLocalJSON {
      # file location override
      if ! [[ -z "$localJSONOverride" ]]; then
@@ -153,7 +154,7 @@ function getLocalJSON {
                logger "JSON file not found, using $scriptDIR"
                getJSON true
           # else use temporary directory
-          else
+          elif ! "$tempDIRCreated"; then
                logger "Unable to write to local JSON files, using temporary directory"
                useTempDIR
                getJSON true
@@ -168,12 +169,12 @@ function getJSON {
      # retrieve URLs, cert Issuer, and cert Subject from Huntress github
      if $downloadFromGithub; then
           if curl -fsSL --tlsv1.2 -o "$localJSON" "$gitURL"; then
+               logger "Download successful from github!"
+               logger
+          else 
                logger "Unable to connect to github, if you can't allow connections to githubusercontent.com then download this file and save it in same DIR as this script."
                logger "$gitURL"
                exit 1
-          else 
-               logger "Download successful from github!"
-               logger
           fi
      fi
      if ! [ -f "$localJSON" ]; then
@@ -208,7 +209,12 @@ function getJSON {
 
      # If the data wasn't ingested into the arrays, exit with error (likely a corrupted JSON download)
      if [[ ${#testURLs[@]} -eq 0 || ${#certURLs[@]} -eq 0 || ${#expSubject[@]} -eq 0 || ${#expIssuer[@]} -eq 0 || ${#expIssuerName[@]} -eq 0 ]]; then
-          logger "Error reading data from JSON file. Delete the local JSON file and try again."
+          logger "Error reading data from JSON file (empty array(s) found). Delete the local JSON file and try again."
+          exit 1
+     fi
+     # These 4 arrays must all be the same size otherwise there was an issue retrieving data.
+     if [[ ${#certURLs[@]} -ne ${#expSubject[@]} || ${#certURLs[@]} -ne ${#expIssuer[@]} || ${#certURLs[@]} -ne ${#expIssuerName[@]} ]]; then
+          logger "Error reading data from JSON file (array size mismatch). Delete the local JSON file and try again."
           exit 1
      fi
 }
@@ -221,10 +227,10 @@ function certTest {
     # Placeholder handling of shell index issues
     if [ -n "$BASH_VERSION" ] && true || false; then
         index=0
-        iMax="((${#testURLs[@]}-1))"
+        iMax="((${#certURLs[@]}-1))"
     else
         index=1
-        iMax="${#testURLs[@]}"
+        iMax="${#certURLs[@]}"
     fi
 
     for item in "${certURLs[@]}"; do
@@ -336,10 +342,11 @@ function useTempDIR {
           exit 1
      fi
      tempDIRCreated=true
+     scriptDIR="$localJSONOverrideDIR"
      logger "Successfully created $localJSONOverrideDIR directory!"
      # ensure temp directory is only writable by admins
      chmod 700 "$localJSONOverrideDIR"
-     localJSONOverride="$localJSONOverrideDIR/"
+     localJSONOverride="$localJSONOverrideDIR"
 }
 
 checkDependency
