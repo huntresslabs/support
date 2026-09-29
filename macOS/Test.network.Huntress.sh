@@ -104,18 +104,18 @@ function JSONSecurityChecks {
                logger "Caution: Running from root directory is not recommended (localJSONOverride), using temporary directory"
                useTempDIR
           # If the localJSONOverride variable is set and location is writable by non-admins, use temp directory.
-          elif [ "$(stat -c %a "$localJSONOverride" 2>/dev/null || stat -f %p "$localJSONOverride" | tail -c 4)" = "777" ]; then
+          elif [[ "$(stat -c %a "$localJSONOverride" 2>/dev/null || stat -f %p "$localJSONOverride" | tail -c 4)" = "777" ]]; then
                logger "Warning: JSON (override) directory is writable by non-admins, using a temporary directory instead!"
                useTempDIR
           # Symbolic links could potentially give a user limited access to a directory they normally can't access.
-          elif [ -L "$localJSONOverride" || -L "$localJSONOverride/URLdata.json" ]; then
+          elif [[ -L "$localJSONOverride" ]] || [[ -L "$localJSONOverride/URLdata.json" ]]; then
                logger "JSON override is a symbolic link, using temporary directory instead."
                useTempDIR
           fi
      else
           localPerm="$(stat -c %a "$scriptDIR" 2>/dev/null || stat -f %p "$scriptDIR" | tail -c 1)"
           # Symbolic links could potentially give a user limited access to a directory they normally can't access.
-          if [ -L "$localJSON" ]; then
+          if [[ -L "$localJSON" ]]; then
                logger "Local JSON is a symbolic link, using temporary directory instead."
                useTempDIR
           # if the script is ran from the root directory and there isn't a local override, use a temp directory
@@ -123,7 +123,7 @@ function JSONSecurityChecks {
                logger "Caution: Running from root directory is not recommended (localJSON), using temporary directory"
                useTempDIR
           # if the directory is writable by all users, use temp directory instead
-          elif [ "$localPerm" = "7" || "$localPerm" = "6" ]; then
+          elif [[ "$localPerm" = "7" || "$localPerm" = "6" ]]; then
                logger "Warning: JSON file directory is writable by non-admins, using a temporary directory instead!"
                useTempDIR
           fi
@@ -212,7 +212,9 @@ function getJSON {
           logger "Error reading data from JSON file (empty array(s) found). Delete the local JSON file and try again."
           exit 1
      fi
+
      # These 4 arrays must all be the same size otherwise there was an issue retrieving data.
+     # shellcheck disable=SC2055
      if [[ ${#certURLs[@]} -ne ${#expSubject[@]} || ${#certURLs[@]} -ne ${#expIssuer[@]} || ${#certURLs[@]} -ne ${#expIssuerName[@]} ]]; then
           logger "Error reading data from JSON file (array size mismatch). Delete the local JSON file and try again."
           exit 1
