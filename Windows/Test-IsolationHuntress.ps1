@@ -52,6 +52,10 @@ function cleanupTempFile {
 
 # Store current WFP rules in a temp file
 $tempDIR = "$env:TEMP\Huntress.$((Get-Date).Second.ToString())"
+if (Test-Path $tempDIR) {
+    cleanupTempFile
+    $tempDIR = "$env:TEMP\Huntress.bak"
+}
 New-Item -Path $tempDIR -ItemType "directory" | Out-Null
 if (! (Test-Path $tempDIR)) {
     Write-Output "Unable to create temporary directory in $env:TEMP  Exiting"
@@ -91,32 +95,38 @@ if ($numHuntressFilters -gt 0) {
 }
 
 
-Write-Output "Looking for Defender Firewall blocking rules (best effort)..."
-$firewallRules = New-Object System.Collections.ArrayList
-Get-NetFirewallRule -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object {
-    $portFilter   = $_ | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
-    $addressFilter = $_ | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
+if ( [System.Environment]::OSVersion.Version.Major -ge 6.2) {
+    $skipDFTest=$false
+    Write-Output "Looking for Defender Firewall blocking rules (best effort)..."
+    $firewallRules = New-Object System.Collections.ArrayList
+    Get-NetFirewallRule -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object {
+        $portFilter   = $_ | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
+        $addressFilter = $_ | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
 
-    $firewallRules += New-Object PSObject -Property@{
-        Name          = $_.Name
-        DisplayName   = $_.DisplayName
-        Direction     = $_.Direction
-        Profile       = $_.Profile
-        Protocol      = $portFilter.Protocol
-        LocalPort     = $portFilter.LocalPort
-        RemotePort    = $portFilter.RemotePort
-        LocalAddress  = $addressFilter.LocalAddress
-        RemoteAddress = $addressFilter.RemoteAddress
+        $firewallRules += New-Object PSObject -Property@{
+            Name          = $_.Name
+            DisplayName   = $_.DisplayName
+            Direction     = $_.Direction
+            Profile       = $_.Profile
+            Protocol      = $portFilter.Protocol
+            LocalPort     = $portFilter.LocalPort
+            RemotePort    = $portFilter.RemotePort
+            LocalAddress  = $addressFilter.LocalAddress
+            RemoteAddress = $addressFilter.RemoteAddress
+        }
     }
-}
-if ($firewallRules.Count -gt 0) {
-    $firewallRules | Format-List
+    if ($firewallRules.Count -gt 0) {
+        $firewallRules | Format-List
+    }
+} else {
+    Write-Output "This version of Windows doesn't support the commands needed to view Defender Firewall rules with sufficient detail. Skipping Defender Firewall test..."
+    $skipDFTest = $true
 }
 
-# Look for MDE isolation, which is easiest found by looking in event logs
 Write-Output "Looking for Microsoft Defender for Endpoint (MDE/DfE/ATP) isolation events..."
-$newestEvent   = $null
-$eventsFromMDE = @()
+$newestEvent      = $null
+$MDETryCatch      = $false
+$eventsFromMDE    = @()
 try {
     $loggedMDEEvents = @(Get-WinEvent -FilterHashTable @{
         LogName   = 'Microsoft-Windows-SENSE/Operational'
@@ -129,15 +139,18 @@ try {
             $eventsFromMDE += $loggedEvent
             $total3rdPartyBlocks++
             # Grabbing the most recent successful event.
-            # Event ID 60 indicates "failed to run command" so we ignore those. ID 59 indicates starting command, while 71 indicates the command succeeded
-            if ($null -eq $newestEvent -or $newestEvent.RecordId -gt $loggedEvent.RecordId -or ($newestEvent.EventId -eq 60 -and $loggedEvent.EventId -eq 71) ) {
+            # Event ID 60 indicates "failed to run command". ID 59 indicates "starting command", while 71 indicates the command succeeded
+            if ($null -eq $newestEvent) {
+                $newestEvent = $loggedEvent
+            } 
+            if ($newestEvent.RecordId -lt $loggedEvent.RecordId -and $loggedEvent.Id -eq 71) {
                 $newestEvent = $loggedEvent
             }
         }
     }
 } catch {
-    $doEventsExistMDE = $false
-    $scOutput         = $(sc.exe query sense)
+    $MDETryCatch = $true
+    $scOutput    = $(sc.exe query sense)
     if ($scOutput -like "*STOPPED*") {
         Write-Output "Error retrieving Windows Event Logs! This is expected if Microsoft Defender for Endpoint is not installed on the endpoint"
         Write-Output "(AKA Defender for Business AKA Defender ATP)"
@@ -147,16 +160,13 @@ try {
     }
 }
 # If the most recent command is an unisolation that succeeded (RecordId 71), mark the scan as most likely not isolated by MDE
-if ( ($newestEvent.Message -like "*unisolationcommand*" -or $newestEvent.Message -like "*unisolate*") -and $newestEvent.EventId -eq 71) {
+if ( ($newestEvent.Message -like "*unisolationcommand*" -or $newestEvent.Message -like "*unisolate*") -and $newestEvent.Id -eq 71) {
     $unisolationNewest = $true
 }
 if ($eventsFromMDE.Count -gt 0) {
     prettyPrintMDE $eventsFromMDE
-    # This variable is null if the above try/catch went into the catch branch, however since some data was retrieved we attempt to display it
-    if ($null -eq $doEventsExistMDE) {
-        $doEventsExistMDE=$true
-    }
 }
+
 
 Write-Output "`n------------------------------ Results ------------------------------"
 if ($numHuntressFilters -gt 0) {
@@ -165,20 +175,24 @@ if ($numHuntressFilters -gt 0) {
     Write-Output "Huntress          : not isolating this machine!"
 }
 
-if ($firewallRules.Count -gt 0) {
-    Write-Output "Defender Firewall : $($firewallRules.Count) potential blocking rules found!"
+if ($skipDFTest) {
+    Write-Output "Defender Firewall : Skipped test, unsupported OS."
 } else {
-    Write-Output "Defender Firewall : no blocking rules found on this machine. This isn't conclusive, simply a best effort."
+    if ($firewallRules.Count -gt 0) {
+        Write-Output "Defender Firewall : $($firewallRules.Count) potential blocking rules found!"
+    } else {
+        Write-Output "Defender Firewall : no blocking rules found on this machine. This isn't conclusive, simply a best effort."
+    }
 }
 
-if ($eventsFromMDE.Count -gt 0 -and ! $doEventsExistMDE) {
+if ($eventsFromMDE.Count -gt 0 -and ! $MDETryCatch) {
     if ($unisolationNewest -ne $true) {
         Write-Output "Microsoft DfE     : isolation event found in the last 30 days! Check your Microsoft portal for alerts!"
     } else {
         Write-Output "Microsoft DfE     : a recent isolation event was detected, however an unisolation event was detected as a more recent event."
         Write-Output "Examine the Event Logs above or check your Microsoft portal to confirm the endpoint isn't isolated by MDE"
     }
-} elseif ($doEventsExistMDE) {
+} elseif ($eventsFromMDE.Count -gt 0 -and $MDETryCatch) {
     Write-Output "Microsoft DfE     : Error retrieving data from Event Logs, however some data was retrieved which should be visible above."
 } else {
     Write-Output "Microsoft DfE     : no isolation events found in the event logs"
