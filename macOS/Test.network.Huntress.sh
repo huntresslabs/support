@@ -130,6 +130,26 @@ function JSONSecurityChecks {
      fi
 }
 
+# Creates a temp directory if the file storage location is unsafe 
+function useTempDIR {
+     localJSONOverrideDIR=$(mktemp -d "/tmp/huntress.XXXXXX") || {
+          logger "WARNING: Unable to create a private temporary directory in /tmp/!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     }
+     if ! [[ -d $localJSONOverrideDIR ]]; then
+          logger "WARNING: Unable to create temporary directory!"
+          logger "WARNING: No safe place to store JSON file found, exiting!"
+          exit 1
+     fi
+     tempDIRCreated=true
+     scriptDIR="$localJSONOverrideDIR"
+     logger "Successfully created $localJSONOverrideDIR directory!"
+     # ensure temp directory is only writable by admins
+     chmod 700 "$localJSONOverrideDIR"
+     localJSONOverride="$localJSONOverrideDIR/"
+}
+
 # If the local JSON file meets the requirements, skip downloading from github
 function getLocalJSON {
      # file location override
@@ -154,7 +174,7 @@ function getLocalJSON {
                logger "JSON file not found, using $scriptDIR"
                getJSON true
           # else use temporary directory
-          elif ! "$tempDIRCreated"; then
+          elif [[ "$tempDIRCreated" != "true" ]]; then
                logger "Unable to write to local JSON files, using temporary directory"
                useTempDIR
                getJSON true
@@ -329,26 +349,6 @@ function certFail {
     logger "      You'll need to add an exclusion for the certificate for this URL in your DPI/cert interception service: $cleanURL"
     logger "* Otherwise this is likely a missing certificate chain. Check for pending OS updates, reboot, and try again."
     logger "------------------------------------------------------------------------------------------------------------------------------"
-}
-
-# Creates a temp directory if the file storage location is unsafe 
-function useTempDIR {
-     localJSONOverrideDIR=$(mktemp -d "/tmp/huntress.XXXXXX") || {
-          logger "WARNING: Unable to create a private temporary directory in /tmp/!"
-          logger "WARNING: No safe place to store JSON file found, exiting!"
-          exit 1
-     }
-     if ! [[ -d $localJSONOverrideDIR ]]; then
-          logger "WARNING: Unable to create temporary directory!"
-          logger "WARNING: No safe place to store JSON file found, exiting!"
-          exit 1
-     fi
-     tempDIRCreated=true
-     scriptDIR="$localJSONOverrideDIR"
-     logger "Successfully created $localJSONOverrideDIR directory!"
-     # ensure temp directory is only writable by admins
-     chmod 700 "$localJSONOverrideDIR"
-     localJSONOverride="$localJSONOverrideDIR"
 }
 
 checkDependency
