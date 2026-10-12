@@ -157,6 +157,7 @@ try {
     $newestEvent      = $null
     $MDETryCatch      = $false
     $eventsFromMDE    = @()
+    $noMDEEventsFound = $false
     try {
         $loggedMDEEvents = @(Get-WinEvent -FilterHashTable @{
             LogName   = 'Microsoft-Windows-SENSE/Operational'
@@ -164,18 +165,22 @@ try {
         } -ErrorAction Stop)
         #$loggedMDEEvents = @(Get-WinEvent -Path ".\sense logs.evtx" -ErrorAction Stop)
 
-        foreach ($loggedEvent in $loggedMDEEvents) {
-            # storing all isolate and unisolate events in the last $cutoff days to display for troubleshooting
-            if ($loggedEvent.TimeCreated -ge $cutoff -and $loggedEvent.Message -match 'isolate|unisolate|isolation|unisolation') {
-                $eventsFromMDE += $loggedEvent
-                $total3rdPartyBlocks++
-                # Id 60 indicates "failed to run command". Id 59 indicates "starting command", while 71 indicates the command succeeded
-                # grabbing the most recent successful event if $newestEvent hasn't been set yet. 
-                if ($null -eq $newestEvent -and $loggedEvent.Id -eq 71) {
-                    $newestEvent = $loggedEvent
-                # if a newer successful event is found, use it instead.
-                } elseif ($newestEvent.RecordId -lt $loggedEvent.RecordId -and $loggedEvent.Id -eq 71) {
-                    $newestEvent = $loggedEvent
+        if ($null -eq $loggedMDEEvents) {
+            $noMDEEventsFound = $true
+        } else {
+            foreach ($loggedEvent in $loggedMDEEvents) {
+                # storing all isolate and unisolate events in the last $cutoff days to display for troubleshooting
+                if ($loggedEvent.TimeCreated -ge $cutoff -and $loggedEvent.Message -match 'isolate|unisolate|isolation|unisolation') {
+                    $eventsFromMDE += $loggedEvent
+                    $total3rdPartyBlocks++
+                    # Id 60 indicates "failed to run command". Id 59 indicates "starting command", while 71 indicates the command succeeded
+                    # grabbing the most recent successful event if $newestEvent hasn't been set yet. 
+                    if ($null -eq $newestEvent -and $loggedEvent.Id -eq 71) {
+                        $newestEvent = $loggedEvent
+                    # if a newer successful event is found, use it instead.
+                    } elseif ($newestEvent.RecordId -lt $loggedEvent.RecordId -and $loggedEvent.Id -eq 71) {
+                        $newestEvent = $loggedEvent
+                    }
                 }
             }
         }
@@ -188,7 +193,9 @@ try {
             Write-Host "MDE unknown service state, unable to retrieve Windows Logs! Ignore this if MDE/DfE/DfB/ATP isn't installed."
         }
     }
-    if ( ! $MDETryCatch ) {
+    if ($noMDEEventsFound) {
+        Write-Host "No MDE events found in the last $cutoff days."
+    } elseif ( ! $MDETryCatch ) {
         # If the most recent command is an unisolation event, mark this scan as most likely not isolated by MDE
         if ($newestEvent.Message -like "*unisolationcommand*" -or $newestEvent.Message -like "*unisolate*") {
             $unisolationNewest = $true
