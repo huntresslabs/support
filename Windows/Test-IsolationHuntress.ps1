@@ -1,13 +1,19 @@
 # Helper script that is primarily for detecting active Huntress Host Isolation, all other functions are "best effort". 
-# Also attempts to identify Defender Firewall-based isolations or Microsoft Defender for Endpoint (MDE) isolation events.
+# Also attempts to identify Defender Firewall-based isolations, Microsoft Defender for Endpoint (MDE) isolation events, and 3rd party WFP isolations.
 # There is substantial complication and depth to detecting these, so this is a "best effort" for 3rd party software. There 
 # are other ways a program could isolate a machine from its network that aren't easily detectable! 
 #
-# This script can't detect: 3rd party WFP isolation, group policy based firewall rules, hardware based isolation, or Quality of Service (QoS) policies.
+# This script can't detect: group policy based firewall rules, hardware based isolation, DNS-based isolation, or Quality of Service (QoS) policies.
 #
 # Suggested Usage:
 #         powershell -executionpolicy bypass -f .\Test-IsolationHuntress.ps1
 
+Write-Host ""
+Write-Host "     ##   ## ##    ## ###    ##  ######  ######  ####### ####### #######" -ForegroundColor Cyan
+Write-Host "     ##   ## ##    ## ####   ##    ##    ##   ## ##      ##      ##     " -ForegroundColor Cyan
+Write-Host "     ####### ##    ## ## ##  ##    ##    ######  #####   ####### #######" -ForegroundColor Cyan
+Write-Host "     ##   ## ##    ## ##  ## ##    ##    ##   ## ##           ##      ##" -ForegroundColor Cyan
+Write-Host "     ##   ##  ######  ##   ####    ##    ##   ## ####### ####### #######" -ForegroundColor Cyan
 Write-Host "-------------------------------------------------------------------------"
 Write-Host "    Huntress Network Isolation Tester, last updated October 12, 2026"
 Write-Host "-------------------------------------------------------------------------`n"
@@ -15,7 +21,7 @@ Write-Host "--------------------------------------------------------------------
 # This script is compatible with all versions of Windows that Huntress Host Isolation supports, i.e. Kernel 6+.
 $kernelVersion = [float]"$([System.Environment]::OSVersion.Version.Major).$([System.Environment]::OSVersion.Version.Minor)"
 if ( $kernelVersion -lt 6) {
-    Write-Output "Machine is not supported. Windows Filtering Platform (WFP) only exists on kernel 6 and higher. Exiting..."
+    Write-Output "Machine is not supported. Windows Filtering Platform (WFP) only exists on kernel 6+ (Vista/2008 and higher). Exiting..."
     exit 1
 }
 
@@ -75,7 +81,7 @@ try {
         Write-Output "Looking for WFP blocking rules..."
         foreach ($filter in $allFilters) {
             # Huntress rules
-            if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT') {
+            if ($filter.displayData.name -match 'Huntress' -and $filter.action.type -contains "FWP_ACTION_BLOCK" -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT') {
                 $filterToAdd = New-Object PSObject -Property @{
                     Name = $filter.displayData.name
                     Action = $filter.action.type
@@ -107,7 +113,7 @@ try {
     }
 
 
-    # Kernel must be 6.2+ for a Defender Firewall check
+    # Kernel must be 6.2+ for a Defender Firewall check (Win 8/Server 2012 or higher)
     if ( $kernelVersion -ge 6.2 ) {
         $skipDFTest    = $false
         $firewallRules = New-Object System.Collections.ArrayList
@@ -175,47 +181,47 @@ try {
         }
     } catch {
         $MDETryCatch = $true
-        $scOutput    = $(sc.exe query sense)
+        $scOutput    = $(sc.exe query sense 2>$null | Select-String "STATE")
         if ($scOutput -like "*STOPPED*") {
             Write-Output "MDE service is not running, unable to retrieve MDE logs. Likely MDE/DfE/DfB/ATP isn't installed."
         } else {
-            Write-Output $scOutput
-            Write-Output "Unknown error retrieving Windows Event Logs! You can ignore this if Microsoft Defender for Endpoint is not installed."
+            Write-Output "MDE unknown service state, unable to retrieve Windows Logs! Ignore this if MDE/DfE/DfB/ATP isn't installed."
         }
     }
-    # If the most recent command is an unisolation event, mark this scan as most likely not isolated by MDE
-    if ($newestEvent.Message -like "*unisolationcommand*" -or $newestEvent.Message -like "*unisolate*") {
-        $unisolationNewest = $true
+    if ( ! $MDETryCatch ) {
+        # If the most recent command is an unisolation event, mark this scan as most likely not isolated by MDE
+        if ($newestEvent.Message -like "*unisolationcommand*" -or $newestEvent.Message -like "*unisolate*") {
+            $unisolationNewest = $true
+        }
+        if ($eventsFromMDE.Count -gt 0) {
+            prettyPrintMDE $eventsFromMDE
+        } else {
+            Write-Output "No MDE events found in the last $cutoff days."
+        }
     }
-    if ($eventsFromMDE.Count -gt 0) {
-        prettyPrintMDE $eventsFromMDE
-    } else {
-        Write-Output "No MDE events found in the last $cutoff days."
-    }
-
 
     Write-Output "`n------------------------------ Results ------------------------------"
     if ($numHuntressFilters -gt 0) {
-        Write-Output "Huntress          : Host Isolation active, active Huntress WFP filters found: $numHuntressFilters!"
+        Write-Host "Huntress          : Host Isolation active, active Huntress WFP filters found: $numHuntressFilters!" -ForegroundColor Black -BackgroundColor Red
     } else {
-        Write-Output "Huntress          : not isolating this machine!"
+        Write-Host "Huntress          : Not isolating this machine!" -ForegroundColor Green -BackgroundColor Black
     }
 
     if ($numOtherFilters -gt 0) {
-        Write-Output "Other WFP Filters : Active 3rd party WFP filters found: $numOtherFilters!"
+        Write-Host "Other WFP Filters : Active 3rd party WFP filters found: $numOtherFilters! Look above at the 'Name' field to see the source of isolation." -ForegroundColor Black -BackgroundColor Red
     } else {
-        Write-Output "Other WFP Filters : No active 3rd party WFP blocking filters found. This isn't conclusive, simply a best effort."
+        Write-Host "Other WFP Filters : No active 3rd party WFP blocking filters found. This isn't conclusive, simply a best effort." -ForegroundColor Green -BackgroundColor Black
     }
 
     if ($skipDFTest) {
-        Write-Output "Defender Firewall : Skipped test, unsupported OS."
+        Write-Host "Defender Firewall : Skipped test, unsupported OS." -ForegroundColor Green -BackgroundColor Black
     } elseif ($null -ne $firewallFail) {
-        Write-Output "$firewallFail"
+        Write-Host "$firewallFail"
     } else {
         if ($firewallRules.Count -gt 0) {
-            Write-Output "Defender Firewall : $($firewallRules.Count) potential blocking rules found!"
+            Write-Host "Defender Firewall : $($firewallRules.Count) potential blocking rules found!" -ForegroundColor Black -BackgroundColor Red
         } else {
-            Write-Output "Defender Firewall : no blocking rules found on this machine. This isn't conclusive, simply a best effort."
+            Write-Host "Defender Firewall : No blocking rules found on this machine. This isn't conclusive, simply a best effort." -ForegroundColor Green -BackgroundColor Black
         }
     }
 
@@ -223,21 +229,21 @@ try {
     if ($eventsFromMDE.Count -gt 0 -and ! $MDETryCatch) {
         # if the most recent event was not an unisolation
         if ($unisolationNewest -eq $false) {
-            Write-Output "Microsoft DfE     : isolation event found in the last 30 days! Check your Microsoft portal for alerts!"
+            Write-Host "Microsoft DfE     : Isolation event found in the last 30 days! Check your Microsoft portal for alerts!" -ForegroundColor Black -BackgroundColor Red
         # if the most recent event was an unisolation
         } else {
-            Write-Output "Microsoft DfE     : a recent isolation event was detected, however an unisolation event was detected as a more recent event."
-            Write-Output "Examine the Event Logs above or check your Microsoft portal to confirm the endpoint isn't isolated by MDE"
+            Write-Host "Microsoft DfE     : A recent isolation event was detected, however an unisolation event was detected as a more recent event." -ForegroundColor White -BackgroundColor Black
+            Write-Host "Examine the Event Logs above or check your Microsoft portal to confirm the endpoint isn't isolated by MDE" -ForegroundColor White -BackgroundColor Black
         }
     # if we collected events but the 'catch' path was used (printing whatever we can find, best effort)
     } elseif ($eventsFromMDE.Count -gt 0 -and $MDETryCatch) {
-        Write-Output "Microsoft DfE     : Error retrieving data from Event Logs, however some data was retrieved which should be visible above."
+        Write-Host "Microsoft DfE     : Error retrieving data from Event Logs, however some data was retrieved which should be visible above." -ForegroundColor Black -BackgroundColor Red
     # no events, but 'catch' path was used (likely DfE is not installed)
     } elseif ($MDETryCatch) {
-        Write-Output "Microsoft DfE     : Likely not installed, no data found. This isn't conclusive, simply a best effort."
+        Write-Host "Microsoft DfE     : Likely not installed, no data found. This isn't conclusive, simply a best effort." -ForegroundColor Green -BackgroundColor Black
     # catch-all for edge cases
     } else {
-        Write-Output "Microsoft DfE     : no isolation events found in the event logs. This isn't conclusive, simply a best effort."
+        Write-Host "Microsoft DfE     : No isolation events found in the event logs. This isn't conclusive, simply a best effort." -ForegroundColor Green -BackgroundColor Black
     }
 } finally {
     if (Test-Path $tempDir) {
