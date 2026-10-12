@@ -118,14 +118,14 @@ try {
         $skipDFTest    = $false
         $firewallRules = New-Object System.Collections.ArrayList
         $tempRules     = New-Object System.Collections.ArrayList
-
+        
+        Write-Host "Looking for Defender Firewall blocking rules (best effort)..."
         $tempRules = Get-NetFirewallRule -Action Block -Enabled True -ErrorAction SilentlyContinue
         if ($null -eq $tempRules) {
             if ($null -eq $(Get-NetFirewallRule -ErrorAction SilentlyContinue)) {
                 $firewallFail = "Warning: Unable to retrieve Defender Firewall rules"
             }
         } else {
-            Write-Host "Looking for Defender Firewall blocking rules (best effort)..."
             foreach ($rule in $tempRules){
                 $portFilter    = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
                 $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
