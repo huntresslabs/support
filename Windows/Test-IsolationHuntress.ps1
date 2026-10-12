@@ -8,11 +8,11 @@
 # Suggested Usage:
 #         powershell -executionpolicy bypass -f .\Test-IsolationHuntress.ps1
 
-Write-Output "---------------------------------------------------------------------"
-Write-Output "Huntress Network Isolation Tester, last updated October 12, 2026"
-Write-Output "---------------------------------------------------------------------`n"
+Write-Host "-------------------------------------------------------------------------"
+Write-Host "    Huntress Network Isolation Tester, last updated October 12, 2026"
+Write-Host "-------------------------------------------------------------------------`n"
 
-# This script is compatible with all versions of Windows that Huntress Host Isolation supports.
+# This script is compatible with all versions of Windows that Huntress Host Isolation supports, i.e. Kernel 6+.
 $kernelVersion = [float]"$([System.Environment]::OSVersion.Version.Major).$([System.Environment]::OSVersion.Version.Minor)"
 if ( $kernelVersion -lt 6) {
     Write-Output "Machine is not supported. Windows Filtering Platform (WFP) only exists on kernel 6 and higher. Exiting..."
@@ -54,6 +54,8 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 try {
     if (! (Test-Path $tempDIR)) {
         Write-Output "Unable to create temporary directory in $env:TEMP Skipping test for Huntress isolation."
+        $numHuntressFilters = 0
+        $numOtherFilters    = 0
     } else { 
         $out = Join-Path $tempDIR "wfp_filters.xml"
         netsh wfp show filters file=$out | Out-Null
@@ -73,7 +75,7 @@ try {
         Write-Output "Looking for WFP blocking rules..."
         foreach ($filter in $allFilters) {
             # Huntress rules
-            if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
+            if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT') {
                 $filterToAdd = New-Object PSObject -Property @{
                     Name = $filter.displayData.name
                     Action = $filter.action.type
@@ -82,30 +84,34 @@ try {
                 }
                 [void]$HuntressFilters.Add($filterToAdd)
             }
-            # 3rd party rules best effort (primarily based on weight and flag clear which are WFP blocking rule protections against bypass)
-            if ($filter.displayData.name -notmatch 'Huntress' -and $filter.weight.uint64 -gt 2305843009213696500 -and $filter.flags.item -contains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
+            # 3rd party rules (best effort based on best practices for preventing isolation bypass using weight)
+            if ($filter.displayData.name -notmatch 'Huntress' -and $filter.action.type -contains 'FWP_ACTION_BLOCK' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_DISABLED' -and $filter.weight.uint64 -ge 2305843009213696559) {
+                # weight is a metric used to prevent other WFP filters from interferring, logged for troubleshooting
                 $filterToAdd = New-Object PSObject -Property @{
                     Name = $filter.displayData.name
                     Action = $filter.action.type
                     Flags = $($filter.flags.item -join ', ')
-                    Weight = $($filter.effectiveWeight.uint64)
-                }  
+                    Weight = $($filter.weight.uint64)
+                }
                 [void]$otherWFPFilters.Add($filterToAdd)
             }
         }
         $numHuntressFilters = @($HuntressFilters).Count
         if ($numHuntressFilters -gt 0) {
             $HuntressFilters | Format-List
+        echo "b"
         }
         $numOtherFilters = @($otherWFPFilters).Count
         if ($numOtherFilters -gt 0) {
-            $numOtherFilters | Format-List
+            $otherWFPFilters | Format-List
+        echo "c"
         }
     }
 
 
+    # Kernel must be 6.2+ for a Defender Firewall check
     if ( $kernelVersion -ge 6.2 ) {
-        $skipDFTest=$false
+        $skipDFTest    = $false
         $firewallRules = New-Object System.Collections.ArrayList
         $tempRules     = New-Object System.Collections.ArrayList
 
