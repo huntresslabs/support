@@ -99,12 +99,10 @@ try {
         $numHuntressFilters = @($HuntressFilters).Count
         if ($numHuntressFilters -gt 0) {
             $HuntressFilters | Format-List
-        echo "b"
         }
         $numOtherFilters = @($otherWFPFilters).Count
         if ($numOtherFilters -gt 0) {
             $otherWFPFilters | Format-List
-        echo "c"
         }
     }
 
