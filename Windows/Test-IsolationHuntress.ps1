@@ -9,7 +9,7 @@
 #         powershell -executionpolicy bypass -f .\Test-IsolationHuntress.ps1
 
 Write-Output "---------------------------------------------------------------------"
-Write-Output "Huntress Network Isolation Tester, last updated October 1, 2026"
+Write-Output "Huntress Network Isolation Tester, last updated October 12, 2026"
 Write-Output "---------------------------------------------------------------------`n"
 
 # This script is compatible with all versions of Windows that Huntress Host Isolation supports.
@@ -19,11 +19,12 @@ if ( $kernelVersion -lt 6) {
     exit 1
 }
 
-$unisolationNewest = $true
-$cutoff           = (Get-Date).AddDays(-30)
-$HuntressFilters  = New-Object System.Collections.ArrayList 
-$user             = [Security.Principal.WindowsIdentity]::GetCurrent();
-$isAdmin          = (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+$unisolationNewest = $false
+$cutoff            = (Get-Date).AddDays(-30)
+$HuntressFilters   = New-Object System.Collections.ArrayList
+$otherWFPFilters   = New-Object System.Collections.ArrayList
+$user              = [Security.Principal.WindowsIdentity]::GetCurrent();
+$isAdmin           = (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 if (! $isAdmin) {
     Write-Output "This script must be run as Administrator! Exiting..."
     exit 1
@@ -50,42 +51,56 @@ function prettyPrintMDE {
 # Using a unique-random path inside the users temp folder, script uses a temporary WFP filter cache file
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tempDir | Out-Null
-if (! (Test-Path $tempDIR)) {
-    Write-Output "Unable to create temporary directory in $env:TEMP  Exiting"
-    exit 1
-}
 try {
-    $out = Join-Path $tempDIR "wfp_filters.xml"
-    netsh wfp show filters file=$out | Out-Null
-    # exit if netsh wasn't able to create the file
-    if ( ! (Test-Path $out) ) {
-        Write-Output "Unable to retrieve cache file in $out"
-        exit 1
-    }
-    [xml]$wfp = Get-Content $out
-    $allFilters = $wfp.wfpdiag.filters.item
-    # exit if the WFP rules can't be read
-    if ($null -eq $allFilters) {
-        Write-Output "Unable to retrieve data from netsh! Exiting..."
-        exit 1
-    }
-
-    Write-Output "Looking for Huntress rules in WFP..."
-    foreach ($filter in $allFilters) {
-        # WFP rules are left in place but in an inactive state, so it's necessary to filter out disabled rules
-        if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
-            $filterToAdd = New-Object PSObject -Property @{
-                Name = $filter.displayData.name
-                Action = $filter.action.type
-                Flags = $($filter.flags.item -join ', ')
-                Weight = $($filter.effectiveWeight.uint64)
-            }
-            [void]$HuntressFilters.Add($filterToAdd)
+    if (! (Test-Path $tempDIR)) {
+        Write-Output "Unable to create temporary directory in $env:TEMP Skipping test for Huntress isolation."
+    } else { 
+        $out = Join-Path $tempDIR "wfp_filters.xml"
+        netsh wfp show filters file=$out | Out-Null
+        # exit if netsh wasn't able to create the file
+        if ( ! (Test-Path $out) ) {
+            Write-Output "Unable to retrieve cache file in $out"
+            exit 1
         }
-    }
-    $numHuntressFilters = @($HuntressFilters).Count
-    if ($numHuntressFilters -gt 0) {
-        $HuntressFilters | Format-List
+        [xml]$wfp = Get-Content $out
+        $allFilters = $wfp.wfpdiag.filters.item
+        # exit if the WFP rules can't be read
+        if ($null -eq $allFilters) {
+            Write-Output "Unable to retrieve data from netsh! Exiting..."
+            exit 1
+        }
+
+        Write-Output "Looking for WFP blocking rules..."
+        foreach ($filter in $allFilters) {
+            # Huntress rules
+            if ($filter.displayData.name -match 'Huntress' -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
+                $filterToAdd = New-Object PSObject -Property @{
+                    Name = $filter.displayData.name
+                    Action = $filter.action.type
+                    Flags = $($filter.flags.item -join ', ')
+                    Weight = $($filter.effectiveWeight.uint64)
+                }
+                [void]$HuntressFilters.Add($filterToAdd)
+            }
+            # 3rd party rules best effort (primarily based on weight and flag clear which are WFP blocking rule protections against bypass)
+            if ($filter.displayData.name -notmatch 'Huntress' -and $filter.weight.uint64 -gt 2305843009213696500 -and $filter.flags.item -contains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT'){
+                $filterToAdd = New-Object PSObject -Property @{
+                    Name = $filter.displayData.name
+                    Action = $filter.action.type
+                    Flags = $($filter.flags.item -join ', ')
+                    Weight = $($filter.effectiveWeight.uint64)
+                }  
+                [void]$otherWFPFilters.Add($filterToAdd)
+            }
+        }
+        $numHuntressFilters = @($HuntressFilters).Count
+        if ($numHuntressFilters -gt 0) {
+            $HuntressFilters | Format-List
+        }
+        $numOtherFilters = @($otherWFPFilters).Count
+        if ($numOtherFilters -gt 0) {
+            $numOtherFilters | Format-List
+        }
     }
 
 
@@ -102,14 +117,14 @@ try {
         } else {
             Write-Output "Looking for Defender Firewall blocking rules (best effort)..."
             foreach ($rule in $tempRules){
-                $portFilter   = $_ | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
-                $addressFilter = $_ | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
+                $portFilter    = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
+                $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
                 if ($null -ne $portFilter -and $null -ne $addressFilter){
                     $firewallRules += New-Object PSObject -Property@{
-                        Name          = $_.Name
-                        DisplayName   = $_.DisplayName
-                        Direction     = $_.Direction
-                        Profile       = $_.Profile
+                        Name          = $rule.Name
+                        DisplayName   = $rule.DisplayName
+                        Direction     = $rule.Direction
+                        Profile       = $rule.Profile
                         Protocol      = $portFilter.Protocol
                         LocalPort     = $portFilter.LocalPort
                         RemotePort    = $portFilter.RemotePort
@@ -119,23 +134,6 @@ try {
                 }
             }
         }
-
-        # Get-NetFirewallRule -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object {
-        #     $portFilter   = $_ | Get-NetFirewallPortFilter -ErrorAction Stop
-        #     $addressFilter = $_ | Get-NetFirewallAddressFilter -ErrorAction Stop
-
-        #     $firewallRules += New-Object PSObject -Property@{
-        #         Name          = $_.Name
-        #         DisplayName   = $_.DisplayName
-        #         Direction     = $_.Direction
-        #         Profile       = $_.Profile
-        #         Protocol      = $portFilter.Protocol
-        #         LocalPort     = $portFilter.LocalPort
-        #         RemotePort    = $portFilter.RemotePort
-        #         LocalAddress  = $addressFilter.LocalAddress
-        #         RemoteAddress = $addressFilter.RemoteAddress
-        #     }
-        # }
         if ($firewallRules.Count -gt 0) {
             $firewallRules | Format-List
         }
@@ -144,6 +142,7 @@ try {
         $skipDFTest = $true
     }
 
+    
     Write-Output "Looking for Microsoft Defender for Endpoint (MDE/DfE/ATP) isolation events..."
     $newestEvent      = $null
     $MDETryCatch      = $false
@@ -160,7 +159,7 @@ try {
             if ($loggedEvent.TimeCreated -ge $cutoff -and $loggedEvent.Message -match 'isolate|unisolate|isolation|unisolation') {
                 $eventsFromMDE += $loggedEvent
                 $total3rdPartyBlocks++
-                # Event ID 60 indicates "failed to run command". ID 59 indicates "starting command", while 71 indicates the command succeeded
+                # Id 60 indicates "failed to run command". Id 59 indicates "starting command", while 71 indicates the command succeeded
                 # grabbing the most recent successful event if $newestEvent hasn't been set yet. 
                 if ($null -eq $newestEvent -and $loggedEvent.Id -eq 71) {
                     $newestEvent = $loggedEvent
@@ -186,6 +185,8 @@ try {
     }
     if ($eventsFromMDE.Count -gt 0) {
         prettyPrintMDE $eventsFromMDE
+    } else {
+        Write-Output "No MDE events found in the last $cutoff days."
     }
 
 
@@ -194,6 +195,12 @@ try {
         Write-Output "Huntress          : Host Isolation active, active Huntress WFP filters found: $numHuntressFilters!"
     } else {
         Write-Output "Huntress          : not isolating this machine!"
+    }
+
+    if ($numOtherFilters -gt 0) {
+        Write-Output "Other WFP Filters : Active 3rd party WFP filters found: $numOtherFilters!"
+    } else {
+        Write-Output "Other WFP Filters : No active 3rd party WFP blocking filters found. This isn't conclusive, simply a best effort."
     }
 
     if ($skipDFTest) {
