@@ -21,7 +21,7 @@ Write-Host "--------------------------------------------------------------------
 # This script is compatible with all versions of Windows that Huntress Host Isolation supports, i.e. Kernel 6+.
 $kernelVersion = [float]"$([System.Environment]::OSVersion.Version.Major).$([System.Environment]::OSVersion.Version.Minor)"
 if ( $kernelVersion -lt 6) {
-    Write-Output "Machine is not supported. Windows Filtering Platform (WFP) only exists on kernel 6+ (Vista/2008 and higher). Exiting..."
+    Write-Host "Machine is not supported. Windows Filtering Platform (WFP) only exists on kernel 6+ (Vista/2008 and higher). Exiting..."
     exit 1
 }
 
@@ -32,25 +32,25 @@ $otherWFPFilters   = New-Object System.Collections.ArrayList
 $user              = [Security.Principal.WindowsIdentity]::GetCurrent();
 $isAdmin           = (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 if (! $isAdmin) {
-    Write-Output "This script must be run as Administrator! Exiting..."
+    Write-Host "This script must be run as Administrator! Exiting..."
     exit 1
 }
 
 function prettyPrintMDE {
     param ( [array]$eventsFromMDE )
 
-    Write-Output ""
+    Write-Host ""
     foreach ($MDEEvent in $eventsFromMDE) {
-        Write-Output "Message            : $($MDEEvent.Message)"
+        Write-Host "Message            : $($MDEEvent.Message)"
         if ($MDEEvent.Id -eq 60) {
-            Write-Output "Event Code/Id      : $($MDEEvent.Id)  Id 60 indicates the task failed!"
+            Write-Host "Event Code/Id      : $($MDEEvent.Id)  Id 60 indicates the task failed!"
         } else {
-            Write-Output "Event Code/Id      : $($MDEEvent.Id)"
+            Write-Host "Event Code/Id      : $($MDEEvent.Id)"
         }
-        Write-Output "Machine Name       : $($MDEEvent.MachineName)"
-        Write-Output "Provider Name      : $($MDEEvent.ProviderName)"
-        Write-Output "Time Created       : $($MDEEvent.TimeCreated)"
-        Write-Output "Record ID (unique) : $($MDEEvent.RecordId)`n"
+        Write-Host "Machine Name       : $($MDEEvent.MachineName)"
+        Write-Host "Provider Name      : $($MDEEvent.ProviderName)"
+        Write-Host "Time Created       : $($MDEEvent.TimeCreated)"
+        Write-Host "Record ID (unique) : $($MDEEvent.RecordId)`n"
     }
 }
 
@@ -59,7 +59,7 @@ $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRan
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 try {
     if (! (Test-Path $tempDIR)) {
-        Write-Output "Unable to create temporary directory in $env:TEMP Skipping test for Huntress isolation."
+        Write-Host "Unable to create temporary directory in $env:TEMP Skipping test for Huntress isolation."
         $numHuntressFilters = 0
         $numOtherFilters    = 0
     } else { 
@@ -67,18 +67,18 @@ try {
         netsh wfp show filters file=$out | Out-Null
         # exit if netsh wasn't able to create the file
         if ( ! (Test-Path $out) ) {
-            Write-Output "Unable to retrieve cache file in $out"
+            Write-Host "Unable to retrieve cache file in $out"
             exit 1
         }
         [xml]$wfp = Get-Content $out
         $allFilters = $wfp.wfpdiag.filters.item
         # exit if the WFP rules can't be read
         if ($null -eq $allFilters) {
-            Write-Output "Unable to retrieve data from netsh! Exiting..."
+            Write-Host "Unable to retrieve data from netsh! Exiting..."
             exit 1
         }
 
-        Write-Output "Looking for WFP blocking rules..."
+        Write-Host "Looking for WFP blocking rules..."
         foreach ($filter in $allFilters) {
             # Huntress rules
             if ($filter.displayData.name -match 'Huntress' -and $filter.action.type -contains "FWP_ACTION_BLOCK" -and $filter.flags.item -notcontains 'FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT') {
@@ -125,7 +125,7 @@ try {
                 $firewallFail = "Warning: Unable to retrieve Defender Firewall rules"
             }
         } else {
-            Write-Output "Looking for Defender Firewall blocking rules (best effort)..."
+            Write-Host "Looking for Defender Firewall blocking rules (best effort)..."
             foreach ($rule in $tempRules){
                 $portFilter    = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
                 $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
@@ -148,12 +148,12 @@ try {
             $firewallRules | Format-List
         }
     } else {
-        Write-Output "This version of Windows doesn't support the commands needed to view Defender Firewall rules with sufficient detail. Skipping Defender Firewall test..."
+        Write-Host "This version of Windows doesn't support the commands needed to view Defender Firewall rules with sufficient detail. Skipping Defender Firewall test..."
         $skipDFTest = $true
     }
 
     
-    Write-Output "Looking for Microsoft Defender for Endpoint (MDE/DfE/ATP) isolation events..."
+    Write-Host "Looking for Microsoft Defender for Endpoint (MDE/DfE/ATP) isolation events..."
     $newestEvent      = $null
     $MDETryCatch      = $false
     $eventsFromMDE    = @()
@@ -183,9 +183,9 @@ try {
         $MDETryCatch = $true
         $scOutput    = $(sc.exe query sense 2>$null | Select-String "STATE")
         if ($scOutput -like "*STOPPED*") {
-            Write-Output "MDE service is not running, unable to retrieve MDE logs. Likely MDE/DfE/DfB/ATP isn't installed."
+            Write-Host "MDE service is not running, unable to retrieve MDE logs. Likely MDE/DfE/DfB/ATP isn't installed."
         } else {
-            Write-Output "MDE unknown service state, unable to retrieve Windows Logs! Ignore this if MDE/DfE/DfB/ATP isn't installed."
+            Write-Host "MDE unknown service state, unable to retrieve Windows Logs! Ignore this if MDE/DfE/DfB/ATP isn't installed."
         }
     }
     if ( ! $MDETryCatch ) {
@@ -196,11 +196,11 @@ try {
         if ($eventsFromMDE.Count -gt 0) {
             prettyPrintMDE $eventsFromMDE
         } else {
-            Write-Output "No MDE events found in the last $cutoff days."
+            Write-Host "No MDE events found in the last $cutoff days."
         }
     }
 
-    Write-Output "`n------------------------------ Results ------------------------------"
+    Write-Host "`n------------------------------ Results ------------------------------"
     if ($numHuntressFilters -gt 0) {
         Write-Host "Huntress          : Host Isolation active, active Huntress WFP filters found: $numHuntressFilters!" -ForegroundColor Black -BackgroundColor Red
     } else {
