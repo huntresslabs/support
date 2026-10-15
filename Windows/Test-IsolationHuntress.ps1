@@ -130,7 +130,7 @@ try {
                 $portFilter    = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
                 $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
                 if ($null -ne $portFilter -and $null -ne $addressFilter){
-                    $firewallRules += New-Object PSObject -Property@{
+                    $firewallRules += New-Object PSObject -Property @{
                         Name          = $rule.Name
                         DisplayName   = $rule.DisplayName
                         Direction     = $rule.Direction
