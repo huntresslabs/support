@@ -11,36 +11,19 @@
 
 param (  [string]$URL  )
 
-$latestUpdate = "Huntress Certificate Helper, Windows PowerShell, last updated: October 27, 2026"
+$testTimeout = 20  # number of seconds to wait for TCP connection to establish
+$latestUpdate = "Huntress Certificate Helper, Windows PowerShell, last updated: October 28, 2026"
 $Usage = "Usage examples:`n" +
     "    powershell -executionpolicy bypass -f .\Huntress-CertHelper.ps1 `"microsoft.com`"`n" +
     "    powershell -executionpolicy bypass -f .\Huntress-CertHelper.ps1 `"api.google.com`"`n" +
     "    powershell -executionpolicy bypass -f .\Huntress-CertHelper.ps1 `"https://www.huntress.com`""
 
 
-$user = [Security.Principal.WindowsIdentity]::GetCurrent();
-if ((New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
-    Write-Host ""
-    Write-Host "                ##   ## ##    ## ###    ##  ######  ######  ####### ####### #######" -ForegroundColor Cyan
-    Write-Host "                ##   ## ##    ## ####   ##    ##    ##   ## ##      ##      ##     " -ForegroundColor Cyan
-    Write-Host "                ####### ##    ## ## ##  ##    ##    ######  #####   ####### #######" -ForegroundColor Cyan
-    Write-Host "                ##   ## ##    ## ##  ## ##    ##    ##   ## ##           ##      ##" -ForegroundColor Cyan
-    Write-Host "                ##   ##  ######  ##   ####    ##    ##   ## ####### ####### #######" -ForegroundColor Cyan
-    Write-Host "---------------------------------------------------------------------------------------------------------"
-    Write-Host "           $latestUpdate"
-    Write-Host "---------------------------------------------------------------------------------------------------------"
-} else {
-    throw "Warning: this script must be run as admin. Exiting."
-}
-
-# Select a secure TLS protocol for the current PowerShell process. This must occur before any communication.
+# Select a secure TLS protocol for the current PowerShell process.
 function setNetworking {
-    # Keep "First Run Customize" popup window from blocking the testing (by disabling it)
-    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main" -Name "DisableFirstRunCustomize" -Value 2
 
     try {
         $ProtocolsSupported = [System.Enum]::GetValues([System.Net.SecurityProtocolType])
-        # Only TLS 1.3 or 1.2 are supported for secure communication with the Huntress portal
         if ( ($ProtocolsSupported -contains 'Tls13') -and ($ProtocolsSupported -contains 'Tls12') ) {
             [System.Net.ServicePointManager]::SecurityProtocol = (
                 [System.Enum]::ToObject([System.Net.SecurityProtocolType], 12288) -bOR [System.Enum]::ToObject([System.Net.SecurityProtocolType], 3072)
@@ -55,32 +38,51 @@ function setNetworking {
     } catch {
         $msg = $_.Exception.Message
         Write-Host "Failed to enable TLS 1.2, proper testing requires TLS 1.2 or higher for accurate results. Exiting..."
-        Write-Host "$msg"
         throw $msg
     }
 }
 
-
 # tests that the expected certificates are not intercepted. If the expected cert is not returned the agent will not function.
 function certTest {
-    param ( [string]$URL )
+    param ( [string]$URL,
+            [string]$testTimeout )
 
     $uri = ([uri]($URL))
     $tcp = $null
     $ssl = $null
     try {
         # establish a TCP connection
-        $tcp = New-Object Net.Sockets.TcpClient
-        $tcp.Connect("$uri", 443)
+        $job = Start-Job -ScriptBlock {
+            param ($uri)
+            $tcp = New-Object Net.Sockets.TcpClient
+            $tcp.Connect("$uri", 443)
+            $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
+            $SslProtocols = [System.Security.Authentication.SslProtocols]::Tls12 -bor [System.Security.Authentication.SslProtocols]::Tls13
+            $ssl.AuthenticateAsClient($uri, $null, $SslProtocols, $false)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
+            return $cert
+        } -ArgumentList "$uri"
 
-        # get the stream of SSL data from the TCP connection
-        $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
-        # Explicitly target TLS 1.2 or TLS 1.3, allowing the client to ignore cert collection issues
-        $SslProtocols = [System.Security.Authentication.SslProtocols]::Tls12 -bor [System.Security.Authentication.SslProtocols]::Tls13
-        $ssl.AuthenticateAsClient($uri, $null, $SslProtocols, $false)
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
-        
-        $spaceLength = 100
+        $isJobComplete = Wait-Job $job -Timeout $testTimeout
+
+        if ($isJobComplete) {
+            $cert = Receive-Job $job
+        } else {
+            Write-Host "TCP SSL connection couldn't be established in $testTimeout seconds. Stopping test."
+            Stop-Job $job
+            Remove-Job $job -Force
+            throw "Unable to establish TCP connection to $uri in $testTimeout seconds."
+        }
+        Remove-Job $job -Force
+
+        if ($($cert.Subject.Length) -gt $($cert.Issuer.Length)) {
+            $spaceLength = $($cert.Subject.Length) + 10
+        } else {
+            $spaceLength = $($cert.Issuer.Length) + 10
+        }
+        if ($spaceLength -lt 100) {
+            $spaceLength = 100
+        }
         $space = " " * ($spaceLength - 13)
         Write-Host "Certificate Owner:$space" -BackgroundColor "Black" -ForegroundColor "Green"
         $space = " " * ($spaceLength - $($cert.Subject.Length))
@@ -99,8 +101,26 @@ function certTest {
         if ($null -ne $ssl) {
             $ssl.Dispose()
         }
-        $tcp.Close()
+        if ($null -ne $tcp) {
+            $tcp.Close()
+        }
     }
+}
+
+
+$user = [Security.Principal.WindowsIdentity]::GetCurrent();
+if ((New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Host ""
+    Write-Host "                ##   ## ##    ## ###    ##  ######  ######  ####### ####### #######" -ForegroundColor Cyan
+    Write-Host "                ##   ## ##    ## ####   ##    ##    ##   ## ##      ##      ##     " -ForegroundColor Cyan
+    Write-Host "                ####### ##    ## ## ##  ##    ##    ######  #####   ####### #######" -ForegroundColor Cyan
+    Write-Host "                ##   ## ##    ## ##  ## ##    ##    ##   ## ##           ##      ##" -ForegroundColor Cyan
+    Write-Host "                ##   ##  ######  ##   ####    ##    ##   ## ####### ####### #######" -ForegroundColor Cyan
+    Write-Host "---------------------------------------------------------------------------------------------------------"
+    Write-Host "           $latestUpdate"
+    Write-Host "---------------------------------------------------------------------------------------------------------"
+} else {
+    throw "Warning: this script must be run as admin. Exiting."
 }
 
 if ($null -like $URL) {
@@ -108,9 +128,14 @@ if ($null -like $URL) {
     Write-Host "No URL passed to the script, defaulting to testing Huntress.com" -BackgroundColor "Black" -ForegroundColor "Red"
     $URL = "huntress.com"
 }
+# remove https:// or http://
 if ($URL -like "*//*") {
     $URL = @($URL -split "//")[1]
 }
+# remove any trailing forward slash /
+if ($($URL[-1]) -eq "/") {
+    $URL = $URL.Substring(0, $URL.length-1)
+}
 
 setNetworking
-certTest $URL
+certTest $URL $testTimeout
