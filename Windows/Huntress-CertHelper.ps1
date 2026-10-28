@@ -67,6 +67,11 @@ function certTest {
 
         if ($isJobComplete) {
             $cert = Receive-Job $job
+            if ($null -eq $cert.Subject -or $null -eq $cert.Issuer) {
+                Stop-Job $job
+                Remove-Job $job -Force
+                throw "Unable to retrieve certificate details from $uri"                
+            }
         } else {
             Write-Host "TCP SSL connection couldn't be established in $testTimeout seconds. Stopping test."
             Stop-Job $job
