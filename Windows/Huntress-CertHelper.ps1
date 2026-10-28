@@ -137,9 +137,10 @@ if ($null -like $URL) {
 if ($URL -like "*//*") {
     $URL = @($URL -split "//")[1]
 }
-# remove any trailing forward slash /
-if ($($URL[-1]) -eq "/") {
-    $URL = $URL.Substring(0, $URL.length-1)
+# remove directories, this script can only test domain root folder and subdomain root folder
+if ($URL -like "*/*") {
+    $URL = @($URL -split "/")[0]
+    echo $URL
 }
 
 setNetworking
