@@ -1,0 +1,60 @@
+audit credential validation,success and failure
+audit kerberos authentication service,success and failure
+audit kerberos service ticket operations,success and failure
+audit other account logon events,no auditing
+audit application group management,no auditing
+audit computer account management,success and failure
+audit distribution group management,success and failure
+audit other account management events,success
+audit security group management,success and failure
+audit user account management,success and failure
+audit dpapi activity,no auditing
+audit pnp activity,success
+audit process creation,no auditing
+audit process termination,no auditing
+audit rpc events,no auditing
+audit token right adjustment,no auditing
+audit detailed directory service replication,no auditing
+audit directory service access,success and failure
+audit directory service changes,success
+audit directory service replication,no auditing
+audit account lockout,failure
+audit user / device claims,no auditing
+audit group membership,no auditing
+audit ipsec extended mode,no auditing
+audit ipsec main mode,no auditing
+audit ipsec quick mode,no auditing
+audit logoff,success
+audit logon,success and failure
+audit network policy server,success and failure
+audit other logon/logoff events,success and failure
+audit special logon,success
+audit application generated,no auditing
+audit certification services,no auditing
+audit detailed file share,success and failure
+audit file share,success and failure
+audit file system,no auditing
+audit filtering platform connection,failure
+audit filtering platform packet drop,no auditing
+audit handle manipulation,no auditing
+audit kernel object,success and failure
+audit other object access events,success and failure
+audit registry,no auditing
+audit removable storage,success and failure
+audit sam,no auditing
+audit central access policy staging,no auditing
+audit audit policy change,success
+audit authentication policy change,success
+audit authorization policy change,success
+audit policy change,success
+audit filtering platform policy change,no auditing
+audit mpssvc rule-level policy change,no auditing
+audit other policy change events,no auditing
+audit non sensitive privilege use,no auditing
+audit other privilege use,no auditing
+audit sensitive privilege use,success and failure
+audit ipsec driver,no auditing
+audit other system events,success and failure
+audit security state change,success
+audit security system extension,success
+audit system integrity,success and failure
