@@ -13,7 +13,7 @@
 # If you'd like to use a local JSON file in a specified location, uncomment the below line and change the location if needed
 # $alternateLocalJSONFile = "$env:temp\URLdata.json"
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: September 23, 2026"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: November 13, 2026"
 $DebugLog     = "c:\Windows\temp\huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
@@ -94,7 +94,8 @@ function setNetworking {
         }
     } catch {
         $msg = $_.Exception.Message
-        logger "Failed to enable TLS 1.2, Huntress requires TLS 1.2 or higher for security reasons."
+        logger "This system supports these protocols: $([System.Enum]::GetValues([System.Net.SecurityProtocolType]))"
+        logger "Failed to enable TLS 1.2+, Huntress requires TLS 1.2 or higher for security reasons. Exiting."
         logger "$msg"
         throw $msg
     }
@@ -126,7 +127,7 @@ function getLocalJSON {
             logger "Using local URLdata.json from $lastWrite for network testing.`n"
             getJSON $netDataObject
         } else {
-            logger "$netDataObject.localJSON is stale, downloading new version from github for network testing"
+            logger "$($netDataObject.localJSON) is stale, downloading new version from github for network testing"
             getJSON $netDataObject -downloadFromGithub
         }
     # try to use alternate JSON location next
@@ -222,7 +223,7 @@ function certTest {
     param ( [PSObject]$netDataObject )
 
     logger "-- Testing Certificate Validation --"
-    $failCounter = 0
+    $certFailCounter = 0
     $failURLs    = @()
     # for each URL, establish secure TCP connection and grab the certificate and subject lines to compare with known-good values.
     foreach ($singleCert in $($netDataObject.certData)) {
@@ -231,10 +232,15 @@ function certTest {
         $tcp = $null
         $ssl = $null
         try {
+            if ($([System.Enum]::GetValues([System.Net.SecurityProtocolType])) -contains "Tls12") {
+                $SSLProtocol = [System.Security.Authentication.SslProtocols]::Tls12
+            } else {
+                $SSLProtocol = [System.Security.Authentication.SslProtocols]::Tls13
+            }
             $tcp = New-Object Net.Sockets.TcpClient
             $tcp.Connect("$uri", 443)
             $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
-            $ssl.AuthenticateAsClient($uri)
+            $ssl.AuthenticateAsClient($uri, $null, $SSLProtocol, $false)
             $cert       = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
             $recSubject = $cert.Subject
             $recIssuer  = $cert.Issuer
@@ -253,7 +259,7 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
                 logger "[FAILED: Subject validation. Certificate does not match for [$cleanURL] !]"
                 logger "Subject that was returned: [$recSubject]"
                 logger "Subject that was expected: [$($singleCert.expSubject)]"
-                $failCounter++
+                $certFailCounter++
                 $netDataObject.countFails++
                 $failURLs += $cleanURL
             }
@@ -272,15 +278,19 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
                     logger "Issuer that was returned: [$recIssuer]"
                     logger "Issuer that was expected: [$($singleCert.expIssuer)]"
                     logger "PEM that was received: $PEM"
-                    $failCounter++
+                    $certFailCounter++
                     $netDataObject.countFails++
                     $failURLs += $cleanURL
                 }
             }
         } catch {
             logger "Error: $($_.Exception.Message)"
+            if ($_.Exception.InnerException) {
+                logger "Inner Error: $($_.Exception.InnerException.Message)"
+            }
             logger "[Error during certificate validation for '$cleanURL'!]"
-            $failCounter++
+            $tryCatch = $true
+            $certFailCounter++
             $netDataObject.countFails++
             $failURLs += $cleanURL
         } finally {
@@ -290,8 +300,8 @@ $([System.Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X5
             $tcp.Close()
         }
     }
-    # If we see any fails, print more info about those failures.
-    if ($failCounter -gt 0) {
+    # If we see any fails and we encountered no try/catch errors, print more info about those failures.
+    if ($certFailCounter -gt 0 -and ! $tryCatch) {
         foreach ($failURL in $failURLs) {
             certFail $failURL
         }
