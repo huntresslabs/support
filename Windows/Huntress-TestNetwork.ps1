@@ -94,7 +94,7 @@ function setNetworking {
         }
     } catch {
         $msg = $_.Exception.Message
-        logger "This system supports these protocols: $([Net.ServicePointManager]::SecurityProtocol)"
+        logger "This system supports these protocols: $([System.Enum]::GetValues([System.Net.SecurityProtocolType]))"
         logger "Failed to enable TLS 1.2+, Huntress requires TLS 1.2 or higher for security reasons. Exiting."
         logger "$msg"
         throw $msg
@@ -232,10 +232,15 @@ function certTest {
         $tcp = $null
         $ssl = $null
         try {
+            if ($([System.Enum]::GetValues([System.Net.SecurityProtocolType])) -contains "Tls12") {
+                $SSLProtocol = [System.Security.Authentication.SslProtocols]::Tls12
+            } else {
+                $SSLProtocol = [System.Security.Authentication.SslProtocols]::Tls13
+            }
             $tcp = New-Object Net.Sockets.TcpClient
             $tcp.Connect("$uri", 443)
             $ssl = New-Object Net.Security.SslStream($tcp.GetStream(),$false,{$true})
-            $ssl.AuthenticateAsClient($uri, $null, [System.Security.Authentication.SslProtocols]::Tls12, $false)
+            $ssl.AuthenticateAsClient($uri, $null, $SSLProtocol, $false)
             $cert       = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $ssl.RemoteCertificate
             $recSubject = $cert.Subject
             $recIssuer  = $cert.Issuer
