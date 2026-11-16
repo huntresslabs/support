@@ -1,6 +1,5 @@
-# Tests a number of ways Huntress agents communicate with the Huntress portal, essentially a TCP port 443 connection outbound.
-# This effectively tests connectivity as well as checks for certificate interception/inspection services which will prevent the
-# Huntress agent from communicating with the Huntress portal.
+# Tests a number of ways Huntress agents communicate with the Huntress portal on port 443, as well as looks for certificate
+# interception or inspection services, which must have an exclusion for the Huntress.io certificate in order for the agent to operate.
 #
 # This script is designed for use in PowerShell versions 3 through 7. 
 # PoSh 2.x is missing ConvertFrom-Json, out of the box native TLS 1.2 support, and would require .NET that isn't always installed.
@@ -13,7 +12,7 @@
 # If you'd like to use a local JSON file in a specified location, uncomment the below line and change the location if needed
 # $alternateLocalJSONFile = "$env:temp\URLdata.json"
 
-$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: November 13, 2026"
+$latestUpdate = "Huntress Network Tester, Windows PowerShell, last updated: November 16, 2026"
 $DebugLog     = "c:\Windows\temp\huntress_network_test.log"
 
 # adds time stamp to a message and then writes that to the log file
@@ -232,6 +231,7 @@ function certTest {
         $tcp = $null
         $ssl = $null
         try {
+            # the function setNetworking ensures only machines that support TLS 1.2 and/or 1.3, thus the check here is short
             if ($([System.Enum]::GetValues([System.Net.SecurityProtocolType])) -contains "Tls12") {
                 $SSLProtocol = [System.Security.Authentication.SslProtocols]::Tls12
             } else {
